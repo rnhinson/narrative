@@ -361,13 +361,6 @@ def _post_ephemeral(client, channel_id, user_id, thread_ts, text):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    socket_mode = os.environ.get("SOCKET_MODE", "true").lower() != "false"
-
-    if socket_mode:
-        logger.info("⚡️ Starting in Socket Mode")
-        handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
-        handler.start()
-    else:
-        port = int(os.environ.get("PORT", 3000))
-        logger.info("⚡️ Starting HTTP server on port %d", port)
-        app.start(port=port)
+    logger.info("⚡️ Starting Narrative in Socket Mode")
+    handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
+    handler.start()

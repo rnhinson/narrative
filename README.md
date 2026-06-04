@@ -35,9 +35,9 @@ pip install -r requirements.txt
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From Scratch**
 2. Add **Bot Token Scopes** under OAuth & Permissions: `chat:write`, `chat:write.public`, `commands`
-3. Create two **Slash Commands** — `/point` and `/point-config` — both pointing at `https://your-host/slack/events`
-4. Enable **Interactivity** and set the Request URL to `https://your-host/slack/events`
-5. Enable **Socket Mode** (recommended for local dev) and generate an App-Level Token with `connections:write`
+3. Create two **Slash Commands** — `/point` and `/point-config` (no Request URL needed in Socket Mode)
+4. Enable **Interactivity** (no Request URL needed in Socket Mode)
+5. Enable **Socket Mode** and generate an App-Level Token with `connections:write` scope — copy it as `SLACK_APP_TOKEN`
 6. Install the app to your workspace and copy the Bot Token
 
 ### 3. Create a Jira API token
@@ -54,11 +54,7 @@ cp .env.example .env
 ### 5. Run
 
 ```bash
-# Development (Socket Mode — no public URL needed)
 python src/app.py
-
-# Production (HTTP mode)
-SOCKET_MODE=false python src/app.py
 ```
 
 ---
@@ -71,15 +67,13 @@ All settings can be set org-wide in `.env`, and overridden per-channel using `/p
 |---|---|---|
 | `SLACK_BOT_TOKEN` | Bot User OAuth Token (`xoxb-...`) | required |
 | `SLACK_SIGNING_SECRET` | From Basic Information in your Slack App | required |
-| `SLACK_APP_TOKEN` | App-Level Token for Socket Mode (`xapp-...`) | required in Socket Mode |
+| `SLACK_APP_TOKEN` | App-Level Token (`xapp-...`) — enables Socket Mode | required |
 | `JIRA_BASE_URL` | e.g. `https://yourcompany.atlassian.net` | required |
 | `JIRA_EMAIL` | Email associated with the API token | required |
 | `JIRA_API_TOKEN` | Jira API token | required |
 | `JIRA_TARGET_STATUS` | Workflow transition name after pointing | `Ready for Sprint` |
 | `JIRA_LABELS_TO_REMOVE` | Comma-separated labels to strip | _(empty)_ |
 | `JIRA_STORY_POINTS_FIELD` | Jira custom field ID for story points | `customfield_10016` |
-| `PORT` | HTTP port | `3000` |
-| `SOCKET_MODE` | `true` for local dev, `false` for production HTTP | `true` |
 | `DATA_DIR` | Directory for persisting per-channel config | project root |
 
 **Finding your story points field ID:**
@@ -95,6 +89,22 @@ Any channel member can run `/point-config` to override the org-wide defaults for
 
 ---
 
+## Deploying to production
+
+The `deploy/` directory contains everything needed for an OpenShift deployment:
+
+| File | Purpose |
+|---|---|
+| `Dockerfile` | Production image (non-root, OpenShift-safe) |
+| `deploy/pvc.yaml` | Persistent storage for channel configs |
+| `deploy/external-secret.yaml` | External Secrets Operator — pulls creds from Vault |
+| `deploy/deployment.yaml` | Deployment with health checks and resource limits |
+| `.github/workflows/deploy.yml` | GitHub Actions pipeline (build → push → deploy) |
+
+See [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) for the full step-by-step setup guide.
+
+---
+
 ## Project structure
 
 ```
@@ -104,9 +114,23 @@ src/
   config.py         — Per-channel config store with file persistence
   store.py          — In-memory voting session state
   jira.py           — Jira REST API client
+deploy/
+  *.yaml            — OpenShift manifests
+  RUNBOOK.md        — Deployment and ops guide
 .github/workflows/
   deploy.yml        — GitHub Actions CI/CD pipeline
 ```
+
+---
+
+## Contributing
+
+PRs welcome. Please open an issue first for anything beyond small fixes.
+
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/my-thing`)
+3. Make your changes and add tests if applicable
+4. Open a pull request
 
 ---
 
