@@ -1,0 +1,80 @@
+# deployment.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: narrative
+  namespace: your-namespace
+  labels:
+    app: narrative
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: narrative
+  template:
+    metadata:
+      labels:
+        app: narrative
+    spec:
+      automountServiceAccountToken: false
+
+      containers:
+        - name: narrative
+          image: your-org.jfrog.io/docker-local/narrative:latest
+
+          ports:
+            - containerPort: 3000
+              protocol: TCP
+
+          envFrom:
+            - secretRef:
+                name: narrative-secret   # created by ExternalSecret
+
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: SOCKET_MODE
+              value: "false"
+            - name: PORT
+              value: "3000"
+            - name: DATA_DIR
+              value: "/app/data"
+
+          volumeMounts:
+            - name: bot-data
+              mountPath: /app/data
+
+          livenessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+
+          readinessProbe:
+            tcpSocket:
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+
+      volumes:
+        - name: bot-data
+          persistentVolumeClaim:
+            claimName: narrative-data
+
+      securityContext:
+        runAsNonRoot: true
