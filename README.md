@@ -95,24 +95,6 @@ Any channel member can run `/point-config` to override the org-wide defaults for
 
 ---
 
-## Deploying to production
-
-The `deploy/` directory contains everything needed for an OpenShift deployment:
-
-| File | Purpose |
-|---|---|
-| `Dockerfile` | Production image (non-root, OpenShift-safe) |
-| `deploy/pvc.yaml` | Persistent storage for channel configs |
-| `deploy/external-secret.yaml` | External Secrets Operator — pulls creds from Vault |
-| `deploy/deployment.yaml` | Deployment with health checks and resource limits |
-| `deploy/service.yaml` | ClusterIP service |
-| `deploy/route.yaml` | HTTPS Route (edge TLS termination) |
-| `.github/workflows/deploy.yml` | GitHub Actions pipeline (build → push → deploy) |
-
-See [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) for the full step-by-step setup guide.
-
----
-
 ## Project structure
 
 ```
@@ -122,23 +104,9 @@ src/
   config.py         — Per-channel config store with file persistence
   store.py          — In-memory voting session state
   jira.py           — Jira REST API client
-deploy/
-  *.yaml            — OpenShift manifests
-  RUNBOOK.md        — Deployment and ops guide
 .github/workflows/
   deploy.yml        — GitHub Actions CI/CD pipeline
 ```
-
----
-
-## Contributing
-
-PRs welcome. Please open an issue first for anything beyond small fixes.
-
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/my-thing`)
-3. Make your changes and add tests if applicable
-4. Open a pull request
 
 ---
 
