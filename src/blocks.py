@@ -65,12 +65,17 @@ def build_voting_message(session, stats) -> list[dict]:
     if vote_count == 0:
         voter_text = "_No votes yet. Be the first!_"
     elif not revealed:
-        voter_text = "\n".join(
-            f"• <@{uid}> voted ✅" for uid in votes
-        )
+        # Single comma-separated line of who has voted (values hidden)
+        names = ", ".join(f"<@{uid}>" for uid in votes)
+        voter_text = f"✅  {names}"
     else:
+        # Group voters by their point value, one line per value
+        groups: dict[str, list[str]] = {}
+        for uid, v in votes.items():
+            groups.setdefault(v["value"], []).append(f"<@{uid}>")
         voter_text = "\n".join(
-            f"• <@{uid}> → *{v['value']}*" for uid, v in votes.items()
+            f"*{pts}* — {', '.join(uids)}"
+            for pts, uids in sorted(groups.items(), key=lambda kv: _sort_key(kv[0]))
         )
 
     blocks.append({
