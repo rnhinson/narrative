@@ -32,7 +32,7 @@ def build_voting_message(session, stats) -> list[dict]:
     # ── Header ────────────────────────────────────────────────────────────
     blocks.append({
         "type": "header",
-        "text": {"type": "plain_text", "text": "🃏 Story Point Vote", "emoji": True},
+        "text": {"type": "plain_text", "text": "📖 Story Point Vote", "emoji": True},
     })
     blocks.append({
         "type": "section",
