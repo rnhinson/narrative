@@ -17,7 +17,6 @@ Session shape:
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -32,14 +31,14 @@ class Session:
     votes: dict = field(default_factory=dict)
     revealed: bool = False
     updated: bool = False
-    override_points: Optional[str] = None
+    override_points: str | None = None
 
 
 @dataclass
 class VoteStats:
     vote_count: int
     all_agree: bool
-    agreed_value: Optional[str]
+    agreed_value: str | None
     distribution: dict[str, int]
 
 
@@ -69,15 +68,17 @@ def create_session(
     return session
 
 
-def get_session(session_id: str) -> Optional[Session]:
+def get_session(session_id: str) -> Session | None:
     return _sessions.get(session_id)
 
 
-def get_session_by_message(channel_id: str, message_ts: str) -> Optional[Session]:
+def get_session_by_message(channel_id: str, message_ts: str) -> Session | None:
     return _sessions.get(f"{channel_id}:{message_ts}")
 
 
-def add_vote(session_id: str, user_id: str, user_name: str, value: str) -> Optional[Session]:
+def add_vote(
+    session_id: str, user_id: str, user_name: str, value: str
+) -> Session | None:
     session = _sessions.get(session_id)
     if not session:
         return None
@@ -85,14 +86,14 @@ def add_vote(session_id: str, user_id: str, user_name: str, value: str) -> Optio
     return session
 
 
-def set_revealed(session_id: str) -> Optional[Session]:
+def set_revealed(session_id: str) -> Session | None:
     session = _sessions.get(session_id)
     if session:
         session.revealed = True
     return session
 
 
-def set_updated(session_id: str) -> Optional[Session]:
+def set_updated(session_id: str) -> Session | None:
     session = _sessions.get(session_id)
     if session:
         session.updated = True

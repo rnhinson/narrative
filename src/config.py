@@ -10,7 +10,6 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).parent.parent))
 STORE_PATH = DATA_DIR / "config-store.json"
@@ -61,9 +60,15 @@ def get_channel_config(channel_id: str) -> dict:
     """
     saved = _store.get(channel_id, {})
     return {
-        "target_status": saved.get("target_status", _ORG_DEFAULTS["target_status"]),
-        "labels_to_remove": saved.get("labels_to_remove", _ORG_DEFAULTS["labels_to_remove"]),
-        "story_points_field": saved.get("story_points_field", _ORG_DEFAULTS["story_points_field"]),
+        "target_status": saved.get(
+            "target_status", _ORG_DEFAULTS["target_status"]
+        ),
+        "labels_to_remove": saved.get(
+            "labels_to_remove", _ORG_DEFAULTS["labels_to_remove"]
+        ),
+        "story_points_field": saved.get(
+            "story_points_field", _ORG_DEFAULTS["story_points_field"]
+        ),
         "updated_by": saved.get("updated_by"),
         "updated_at": saved.get("updated_at"),
         "is_customized": channel_id in _store,
