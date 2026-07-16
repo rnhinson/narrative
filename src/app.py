@@ -55,6 +55,22 @@ def handle_point(ack, command, respond, client):
 
     cfg = channel_config.get_channel_config(command["channel_id"])
 
+    # Project scoping: if this channel restricts which Jira projects it may
+    # point, reject issue keys outside that set before we ever touch Jira.
+    allowed_projects = cfg.get("allowed_projects") or []
+    project_key = issue_key.split("-", 1)[0]
+    if allowed_projects and project_key not in allowed_projects:
+        respond(
+            response_type="ephemeral",
+            text=(
+                f"🔒 This channel is scoped to "
+                f"{', '.join(f'`{p}`' for p in allowed_projects)}. "
+                f"*{issue_key}* is in project `{project_key}`, which isn't "
+                "allowed here. Run `/point-config` to change the allowed projects."
+            ),
+        )
+        return
+
     try:
         issue = jira_client.get_issue(issue_key, cfg)
     except Exception as exc:
@@ -77,6 +93,8 @@ def handle_point(ack, command, respond, client):
         issue_summary=issue["summary"],
         issue_url=issue["url"],
         initiated_by=command["user_id"],
+        issue_description=issue.get("description", ""),
+        issue_reporter=issue.get("reporter", ""),
     )
     placeholder_stats = store.VoteStats(
         vote_count=0, all_agree=False, agreed_value=None, distribution={}
@@ -104,6 +122,8 @@ def handle_point(ack, command, respond, client):
         issue_summary=issue["summary"],
         issue_url=issue["url"],
         initiated_by=command["user_id"],
+        issue_description=issue.get("description", ""),
+        issue_reporter=issue.get("reporter", ""),
     )
     stats = store.get_vote_stats(session)
 
@@ -186,6 +206,30 @@ def handle_reveal(ack, action, body, client):
         channel=channel_id,
         ts=message_ts,
         text=f"Story point vote for {session.issue_key} — revealed!",
+        blocks=build_voting_message(session, stats),
+    )
+
+
+# ── Toggle ticket description ─────────────────────────────────────────────────
+@app.action("toggle_description")
+def handle_toggle_description(ack, action, body, client):
+    ack()
+    channel_id = body["channel"]["id"]
+    message_ts = body["message"]["ts"]
+    session_id = action["value"]
+
+    session = store.get_session(session_id)
+    if not session:
+        return
+
+    # Shared toggle: expanding/collapsing updates the card for everyone.
+    session.description_expanded = not session.description_expanded
+    stats = store.get_vote_stats(session)
+
+    client.chat_update(
+        channel=channel_id,
+        ts=message_ts,
+        text=f"Story point vote for {session.issue_key}",
         blocks=build_voting_message(session, stats),
     )
 
@@ -333,6 +377,10 @@ def handle_config_submit(ack, view, body, client):
     labels_raw = (values["labels_to_remove"]["value"]["value"] or "").strip()
     labels_to_remove = [lb.strip() for lb in labels_raw.split(",") if lb.strip()]
     story_points_field = values["story_points_field"]["value"]["value"].strip()
+    projects_raw = (values["allowed_projects"]["value"]["value"] or "").strip()
+    allowed_projects = [
+        pk.strip().upper() for pk in projects_raw.split(",") if pk.strip()
+    ]
 
     saved = channel_config.set_channel_config(
         channel_id,
@@ -340,6 +388,7 @@ def handle_config_submit(ack, view, body, client):
             "target_status": target_status,
             "labels_to_remove": labels_to_remove,
             "story_points_field": story_points_field,
+            "allowed_projects": allowed_projects,
         },
         body["user"]["id"],
     )

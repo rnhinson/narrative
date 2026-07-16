@@ -8,6 +8,7 @@ target status) are passed in as a ChannelConfig at call time.
 
 from __future__ import annotations
 import os
+import re
 import httpx
 
 JIRA_BASE_URL = os.environ.get("JIRA_BASE_URL", "").rstrip("/")
@@ -20,13 +21,14 @@ _HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
 
 def get_issue(issue_key: str, channel_config) -> dict:
     """
-    Fetch summary, labels, status and story-points for an issue.
-    Returns a plain dict: {key, summary, labels, status, story_points, url}
+    Fetch summary, labels, status, description and story-points for an issue.
+    Returns a plain dict:
+        {key, summary, description, labels, status, story_points, url}
     """
     field = channel_config["story_points_field"]
     url = (
         f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
-        f"?fields=summary,labels,status,{field}"
+        f"?fields=summary,labels,status,description,reporter,{field}"
     )
     resp = httpx.get(url, auth=_AUTH, headers=_HEADERS, timeout=10)
     resp.raise_for_status()
@@ -34,11 +36,53 @@ def get_issue(issue_key: str, channel_config) -> dict:
     return {
         "key": issue_key,
         "summary": fields.get("summary", ""),
+        "description": _adf_to_text(fields.get("description")),
+        # displayName can be absent on GDPR-restricted instances -> "".
+        "reporter": (fields.get("reporter") or {}).get("displayName", ""),
         "labels": fields.get("labels", []),
         "status": (fields.get("status") or {}).get("name"),
         "story_points": fields.get(field),
         "url": f"{JIRA_BASE_URL}/browse/{issue_key}",
     }
+
+
+def _adf_to_text(node) -> str:
+    """
+    Flatten a Jira Cloud description (Atlassian Document Format — a nested
+    JSON doc, not plain text) into readable plain text. Handles None (no
+    description) and, defensively, a plain string. Not a full ADF renderer:
+    it pulls text runs, turns paragraphs/headings into line breaks, and
+    prefixes list items with a bullet -- enough for a Slack preview.
+    """
+    if node is None:
+        return ""
+    if isinstance(node, str):
+        return node.strip()
+
+    parts: list[str] = []
+
+    def walk(n) -> None:
+        if isinstance(n, list):
+            for item in n:
+                walk(item)
+            return
+        if not isinstance(n, dict):
+            return
+        ntype = n.get("type")
+        if ntype == "text":
+            parts.append(n.get("text", ""))
+            return
+        if ntype == "hardBreak":
+            parts.append("\n")
+            return
+        if ntype == "listItem":
+            parts.append("\n• ")
+        walk(n.get("content", []))
+        if ntype in ("paragraph", "heading"):
+            parts.append("\n")
+
+    walk(node)
+    return re.sub(r"\n{3,}", "\n\n", "".join(parts)).strip()
 
 
 def _get_transitions(issue_key: str) -> list[dict]:
