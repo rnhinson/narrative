@@ -25,6 +25,13 @@ _ORG_DEFAULTS = {
     "story_points_field": os.environ.get(
         "JIRA_STORY_POINTS_FIELD", "customfield_10016"
     ),
+    # Project short codes this channel may point (e.g. ["PLAT", "INFRA"]).
+    # Empty list = allow any project (backward-compatible default).
+    "allowed_projects": [
+        pk.strip().upper()
+        for pk in os.environ.get("JIRA_ALLOWED_PROJECTS", "").split(",")
+        if pk.strip()
+    ],
 }
 
 # In-memory cache
@@ -68,6 +75,9 @@ def get_channel_config(channel_id: str) -> dict:
         ),
         "story_points_field": saved.get(
             "story_points_field", _ORG_DEFAULTS["story_points_field"]
+        ),
+        "allowed_projects": saved.get(
+            "allowed_projects", _ORG_DEFAULTS["allowed_projects"]
         ),
         "updated_by": saved.get("updated_by"),
         "updated_at": saved.get("updated_at"),

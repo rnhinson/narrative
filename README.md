@@ -10,13 +10,15 @@ A Slack bot for running Agile story point voting sessions with Jira integration.
 ## Features
 
 - **`/point PROJ-123`** — starts a vote in the channel with a live link to the Jira ticket
+- **Ticket context** — shows summary and reporter, with a **Show Full Description** toggle that expands the ticket description inline (Jira's rich-text description is flattened to readable text)
 - **Fibonacci scale** — buttons for 1, 2, 3, 5, 8, 13, 21, ?, ☕
 - **Hidden votes** — voters are listed but values stay hidden until reveal
 - **Reveal** — shows all votes with a distribution; highlights consensus
 - **Override** — if there's no consensus, a dropdown lets the team pick a final value
 - **Re-vote** — resets the round without losing the session
 - **Update Jira** — one click when ready: sets story points, removes labels, transitions the ticket
-- **`/point-config`** — per-channel config so each team can set their own Jira status, labels, and field ID
+- **Project scoping** — restrict which Jira projects a channel may point, so teams can't accidentally point tickets outside their own projects
+- **`/point-config`** — per-channel config so each team can set their own allowed projects, Jira status, labels, and field ID
 
 ---
 
@@ -74,6 +76,7 @@ All settings can be set org-wide in `.env`, and overridden per-channel using `/p
 | `JIRA_TARGET_STATUS` | Workflow transition name after pointing | `Ready for Sprint` |
 | `JIRA_LABELS_TO_REMOVE` | Comma-separated labels to strip | _(empty)_ |
 | `JIRA_STORY_POINTS_FIELD` | Jira custom field ID for story points | `customfield_10016` |
+| `JIRA_ALLOWED_PROJECTS` | Comma-separated project keys the bot may point (e.g. `PLAT,INFRA`); blank = any | _(empty)_ |
 | `DATA_DIR` | Directory for persisting per-channel config | project root |
 
 **Finding your story points field ID:**
@@ -85,7 +88,7 @@ curl -u your@email.com:YOUR_API_TOKEN \
 
 ### Per-channel config
 
-Any channel member can run `/point-config` to override the org-wide defaults for their channel. Settings are persisted to `config-store.json` and survive restarts.
+Any channel member can run `/point-config` to override the org-wide defaults for their channel — including **Allowed Jira projects** (scopes `/point` to those project keys), target status, labels to remove, and the story-points field ID. Settings are persisted to `config-store.json` and survive restarts.
 
 ---
 

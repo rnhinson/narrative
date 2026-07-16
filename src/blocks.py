@@ -33,13 +33,53 @@ def build_voting_message(session, stats) -> list[dict]:
         "type": "header",
         "text": {"type": "plain_text", "text": "📖 Story Point Vote", "emoji": True},
     })
+    reporter = getattr(session, "issue_reporter", "") or ""
+    description = getattr(session, "issue_description", "") or ""
+    expanded = getattr(session, "description_expanded", False)
+
+    # Ticket info: hyperlinked key, summary, reporter.
+    reporter_line = f"\n*Reporter:* {reporter}" if reporter else ""
     blocks.append({
         "type": "section",
         "text": {
             "type": "mrkdwn",
-            "text": f"*Ticket:* <{issue_url}|{issue_key}>\n*Summary:* {issue_summary}",
+            "text": (
+                f"*Ticket:* <{issue_url}|{issue_key}>\n"
+                f"*Summary:* {issue_summary}{reporter_line}"
+            ),
         },
     })
+
+    # Show/Hide full description toggle -- only when the ticket has one.
+    if description:
+        blocks.append({
+            "type": "actions",
+            "elements": [{
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": (
+                        "Hide Full Description" if expanded
+                        else "Show Full Description"
+                    ),
+                    "emoji": True,
+                },
+                "action_id": "toggle_description",
+                "value": session.session_id,
+            }],
+        })
+
+    if description and expanded:
+        if len(description) > 2800:  # Slack section text caps at 3000 chars
+            description = (
+                description[:2800].rstrip()
+                + f"…\n\n_(truncated — <{issue_url}|view full ticket>)_"
+            )
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*Description:*\n{description}"},
+        })
+
     blocks.append({"type": "divider"})
 
     # ── Vote buttons (hidden after reveal) ────────────────────────────────
@@ -287,9 +327,38 @@ def build_config_modal(channel_id: str, config: dict, org_defaults: dict) -> dic
             "Fill in any field to override for this channel."
         )
 
+    projects_value = ", ".join(config["allowed_projects"])
+    org_projects_value = ", ".join(org_defaults["allowed_projects"])
+
     modal_blocks = [
         {"type": "context", "elements": [{"type": "mrkdwn", "text": context_text}]},
         {"type": "divider"},
+        {
+            "type": "input",
+            "block_id": "allowed_projects",
+            "label": {
+                "type": "plain_text",
+                "text": "Allowed Jira projects",
+                "emoji": True,
+            },
+            "hint": {
+                "type": "plain_text",
+                "text": (
+                    "Comma-separated project short codes this channel may point "
+                    "(e.g. PLAT, INFRA). Leave blank to allow any project."
+                ),
+            },
+            "optional": True,
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "value",
+                "initial_value": projects_value,
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": org_projects_value or "e.g. PLAT, INFRA",
+                },
+            },
+        },
         {
             "type": "input",
             "block_id": "target_status",
@@ -429,6 +498,10 @@ def build_config_saved_message(config: dict) -> list[dict]:
         labels_text = ", ".join(f"`{lb}`" for lb in config["labels_to_remove"])
     else:
         labels_text = "_none_"
+    if config["allowed_projects"]:
+        projects_text = ", ".join(f"`{pk}`" for pk in config["allowed_projects"])
+    else:
+        projects_text = "_any project_"
     return [
         {
             "type": "section",
@@ -436,6 +509,7 @@ def build_config_saved_message(config: dict) -> list[dict]:
                 "type": "mrkdwn",
                 "text": (
                     f"✅ *Config saved for this channel!*\n\n"
+                    f"*Allowed projects:* {projects_text}\n"
                     f"*Target status:* `{config['target_status']}`\n"
                     f"*Labels to remove:* {labels_text}\n"
                     f"*Story points field:* `{config['story_points_field']}`"

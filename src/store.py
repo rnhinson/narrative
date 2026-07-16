@@ -13,6 +13,9 @@ Session shape:
     updated:        bool
     initiated_by:   str           — user_id who started the vote
     override_points: str | None   — selected value when no consensus
+    issue_description: str        — flattened Jira description text
+    issue_reporter: str           — Jira reporter display name
+    description_expanded: bool    — whether the card is showing the description
 """
 
 from __future__ import annotations
@@ -32,6 +35,9 @@ class Session:
     revealed: bool = False
     updated: bool = False
     override_points: str | None = None
+    issue_description: str = ""
+    issue_reporter: str = ""
+    description_expanded: bool = False
 
 
 @dataclass
@@ -53,6 +59,8 @@ def create_session(
     issue_summary: str,
     issue_url: str,
     initiated_by: str,
+    issue_description: str = "",
+    issue_reporter: str = "",
 ) -> Session:
     session_id = f"{channel_id}:{message_ts}"
     session = Session(
@@ -63,6 +71,8 @@ def create_session(
         issue_summary=issue_summary,
         issue_url=issue_url,
         initiated_by=initiated_by,
+        issue_description=issue_description,
+        issue_reporter=issue_reporter,
     )
     _sessions[session_id] = session
     return session
