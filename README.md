@@ -18,7 +18,8 @@ A Slack bot for running Agile story point voting sessions with Jira integration.
 - **Re-vote** — resets the round without losing the session
 - **Update Jira** — one click when ready: sets story points, removes labels, transitions the ticket
 - **Project scoping (required)** — a channel must configure its allowed Jira project(s) before `/point` works at all, so teams can't accidentally point tickets outside their own projects
-- **`/point-config`** — per-channel config so each team can set their own allowed projects, Jira status, labels, and field ID
+- **Per-channel Jira identity (required)** — a channel authenticates to Jira with either an org-wide fallback token or its own, generated and pasted in via `/point-config`; encrypted at rest and never shown again
+- **`/point-config`** — per-channel config so each team can set their own allowed projects, Jira identity, status, labels, and field ID
 
 ---
 
@@ -44,7 +45,7 @@ pip install -r requirements.txt
 
 ### 3. Create a Jira API token
 
-Generate one at [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens).
+Generate one at [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens). This becomes the org-wide fallback identity (`JIRA_EMAIL`/`JIRA_API_TOKEN` below) — individual channels can instead (or additionally) configure their own via `/point-config`, in which case you'll also want a `CONFIG_ENCRYPTION_KEY` (see Configuration below) so per-channel tokens are encrypted at rest.
 
 ### 4. Configure environment
 
@@ -71,8 +72,9 @@ All settings can be set org-wide in `.env`, and overridden per-channel using `/p
 | `SLACK_SIGNING_SECRET` | From Basic Information in your Slack App | required |
 | `SLACK_APP_TOKEN` | App-Level Token (`xapp-...`) — enables Socket Mode | required |
 | `JIRA_BASE_URL` | e.g. `https://yourcompany.atlassian.net` | required |
-| `JIRA_EMAIL` | Email associated with the API token | required |
-| `JIRA_API_TOKEN` | Jira API token | required |
+| `JIRA_EMAIL` | Org-wide fallback Jira identity — channels can set their own via `/point-config` instead | _(empty)_ |
+| `JIRA_API_TOKEN` | Org-wide fallback Jira API token — see above | _(empty)_ |
+| `CONFIG_ENCRYPTION_KEY` | Fernet key encrypting per-channel Jira tokens at rest; required before a channel can save its own token via `/point-config` (see below) | _(empty)_ |
 | `JIRA_TARGET_STATUS` | Workflow transition name after pointing | `Ready for Sprint` |
 | `JIRA_LABELS_TO_REMOVE` | Comma-separated labels to strip | _(empty)_ |
 | `JIRA_STORY_POINTS_FIELD` | Jira custom field ID for story points | `customfield_10016` |
@@ -88,11 +90,17 @@ curl -u your@email.com:YOUR_API_TOKEN \
 
 ### Per-channel config
 
-Any channel member can run `/point-config` to override the org-wide defaults for their channel — including **Allowed Jira projects** (required before `/point` works in that channel — see below), target status, labels to remove, and the story-points field ID. Settings are persisted to `config-store.json` and survive restarts.
+Any channel member can run `/point-config` to override the org-wide defaults for their channel — including **Allowed Jira projects** and a **Jira email / API token** (both required before `/point` works in that channel — see below), target status, labels to remove, and the story-points field ID. Settings are persisted to `config-store.json` and survive restarts.
 
-### Allowed Jira projects is required
+### A Jira project and a Jira identity are both required
 
-`/point` refuses to run in a channel until it has at least one allowed Jira project — either inherited from the org-wide `JIRA_ALLOWED_PROJECTS` default or set explicitly via `/point-config`. This prevents a channel from pointing into the wrong project by accident (or into every project in the workspace) before anyone's configured it. Running `/point` in an unconfigured channel returns an ephemeral message pointing the user at `/point-config`.
+`/point` refuses to run in a channel until it has:
+1. At least one **allowed Jira project**, either inherited from the org-wide `JIRA_ALLOWED_PROJECTS` default or set via `/point-config`.
+2. A **Jira email + API token** to authenticate with, either the org-wide `JIRA_EMAIL`/`JIRA_API_TOKEN` fallback or a channel's own, set via `/point-config`.
+
+This prevents a channel from pointing into the wrong project, or with the wrong Jira identity, before anyone's configured it. Running `/point` in an unconfigured channel returns an ephemeral message pointing the user at `/point-config`.
+
+A channel's own token is generated at [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens) and pasted into `/point-config`. It's **encrypted at rest** (`CONFIG_ENCRYPTION_KEY`, a Fernet key) before being written to `config-store.json`, and is never echoed back anywhere — the config modal always shows the token field blank, and the saved-confirmation message shows only "🔒 configured," never the value. Submitting the modal with the token field left blank does **not** clear a previously-saved token — leave it blank to keep the current one, or paste a new value to replace it.
 
 ---
 
