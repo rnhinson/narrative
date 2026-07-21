@@ -26,7 +26,10 @@ _ORG_DEFAULTS = {
         "JIRA_STORY_POINTS_FIELD", "customfield_10016"
     ),
     # Project short codes this channel may point (e.g. ["PLAT", "INFRA"]).
-    # Empty list = allow any project (backward-compatible default).
+    # Empty here means "no org-wide default" -- each channel must then set
+    # its own via /point-config before /point will work (see app.py's
+    # handle_point). Set this to give every channel a default set instead
+    # of requiring per-channel setup.
     "allowed_projects": [
         pk.strip().upper()
         for pk in os.environ.get("JIRA_ALLOWED_PROJECTS", "").split(",")
