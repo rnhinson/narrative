@@ -326,7 +326,7 @@ def _perform_jira_update(
 
     cfg = channel_config.get_channel_config(session.channel_id)
     try:
-        jira_client.update_issue(session.issue_key, point_value, cfg)
+        result = jira_client.update_issue(session.issue_key, point_value, cfg)
     except Exception as exc:
         logger.error("Jira update error: %s", exc)
         _post_ephemeral(
@@ -335,6 +335,8 @@ def _perform_jira_update(
         )
         return
 
+    # Stash the pre-update state so the update can be reverted later.
+    session.original_state = result.get("original")
     store.set_updated(session_id)
     stats = store.get_vote_stats(session)
     # Patch agreed_value so the confirmation banner renders the right number
@@ -351,6 +353,76 @@ def _perform_jira_update(
         text=f"Story point vote for {session.issue_key} — complete!",
         blocks=build_voting_message(session, stats),
     )
+
+
+# ── Revert Jira update ────────────────────────────────────────────────────────
+@app.action("revert_jira")
+def handle_revert_jira(ack, action, body, client):
+    ack()
+    channel_id = body["channel"]["id"]
+    message_ts = body["message"]["ts"]
+    user_id = body["user"]["id"]
+    session_id = action["value"]
+
+    session = store.get_session(session_id)
+    if not session:
+        _post_ephemeral(client, channel_id, user_id, message_ts, "Session not found.")
+        return
+
+    if not session.updated:
+        _post_ephemeral(
+            client, channel_id, user_id, message_ts,
+            "Nothing to revert — Jira wasn't updated for this session.",
+        )
+        return
+
+    if session.reverted:
+        _post_ephemeral(
+            client, channel_id, user_id, message_ts,
+            "This session has already been reverted.",
+        )
+        return
+
+    if not session.original_state:
+        _post_ephemeral(
+            client, channel_id, user_id, message_ts,
+            "No original state was captured, so this can't be reverted automatically.",
+        )
+        return
+
+    cfg = channel_config.get_channel_config(session.channel_id)
+    try:
+        result = jira_client.revert_issue(
+            session.issue_key, session.original_state, cfg
+        )
+    except Exception as exc:
+        logger.error("Jira revert error: %s", exc)
+        _post_ephemeral(
+            client, channel_id, user_id, message_ts,
+            f"Failed to revert Jira: `{exc}`",
+        )
+        return
+
+    session.reverted = True
+    stats = store.get_vote_stats(session)
+    client.chat_update(
+        channel=channel_id,
+        ts=message_ts,
+        text=f"Story point vote for {session.issue_key} — reverted",
+        blocks=build_voting_message(session, stats),
+    )
+
+    # Fields always restore; the status move is best-effort (directional
+    # workflow transitions). Warn if it couldn't get back to the original.
+    orig_status = session.original_state.get("status")
+    if orig_status and not result.get("status_restored", False):
+        _post_ephemeral(
+            client, channel_id, user_id, message_ts,
+            f"Labels and story points were restored, but I couldn't transition "
+            f"*{session.issue_key}* back to *{orig_status}* — no matching "
+            "workflow transition from its current status. Set the status "
+            "manually if needed.",
+        )
 
 
 # ── /point-config ─────────────────────────────────────────────────────────────

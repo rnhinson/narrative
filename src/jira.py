@@ -144,4 +144,70 @@ def update_issue(issue_key: str, story_points: str, channel_config) -> dict:
         "removed_labels": [lb for lb in labels_to_remove if lb in issue["labels"]],
         "new_status": target_status,
         "url": issue["url"],
+        # Pre-update snapshot, so the caller can offer a revert later.
+        "original": {
+            "status": issue["status"],
+            "labels": issue["labels"],
+            "story_points": issue["story_points"],
+        },
+    }
+
+
+def revert_issue(issue_key: str, original: dict, channel_config) -> dict:
+    """
+    Undo an update_issue(): restore the original labels, clear the story
+    points (a ticket heading back to the backlog shouldn't carry a pointing
+    estimate), and transition back to the original status.
+
+    Status restore is best-effort -- Jira transitions are directional, so a
+    path back to the original status only exists if the workflow allows it
+    from the current status. Fields (labels, points) always restore; the
+    returned `status_restored` flag says whether the status move succeeded.
+    """
+    story_points_field = channel_config["story_points_field"]
+    orig_labels = original.get("labels", []) or []
+    orig_status = original.get("status")
+
+    # Restore labels and clear story points (None empties the field).
+    issue_url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
+    resp = httpx.put(
+        issue_url,
+        auth=_AUTH,
+        headers=_HEADERS,
+        json={"fields": {story_points_field: None, "labels": orig_labels}},
+        timeout=10,
+    )
+    resp.raise_for_status()
+
+    # Transition back to the original status, matching on the transition's
+    # destination status (more robust than matching the transition name).
+    status_restored = False
+    if orig_status:
+        transitions = _get_transitions(issue_key)
+        match = next(
+            (
+                t
+                for t in transitions
+                if (t.get("to") or {}).get("name", "").lower() == orig_status.lower()
+                or t["name"].lower() == orig_status.lower()
+            ),
+            None,
+        )
+        if match:
+            resp = httpx.post(
+                f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/transitions",
+                auth=_AUTH,
+                headers=_HEADERS,
+                json={"transition": {"id": match["id"]}},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            status_restored = True
+
+    return {
+        "status": orig_status,
+        "status_restored": status_restored,
+        "labels": orig_labels,
+        "story_points": None,
+        "url": f"{JIRA_BASE_URL}/browse/{issue_key}",
     }
