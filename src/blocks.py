@@ -20,6 +20,7 @@ def build_voting_message(session, stats) -> list[dict]:
     votes = session.votes
     revealed = session.revealed
     updated = session.updated
+    reverted = getattr(session, "reverted", False)
 
     vote_count = stats.vote_count
     all_agree = stats.all_agree
@@ -293,8 +294,8 @@ def build_voting_message(session, stats) -> list[dict]:
                 ],
             })
 
-    # ── Updated confirmation banner ───────────────────────────────────────
-    if updated:
+    # ── Updated confirmation banner (+ revert) ────────────────────────────
+    if updated and not reverted:
         display_pts = agreed_value or getattr(session, "override_points", "?")
         blocks.append({
             "type": "section",
@@ -303,6 +304,45 @@ def build_voting_message(session, stats) -> list[dict]:
                 "text": (
                     f"🎉 *Jira updated!* <{issue_url}|{issue_key}> set to "
                     f"*{display_pts} story points* and moved to the next status."
+                ),
+            },
+        })
+        blocks.append({
+            "type": "actions",
+            "elements": [{
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "↩️ Revert to backlog",
+                    "emoji": True,
+                },
+                "style": "danger",
+                "action_id": "revert_jira",
+                "value": session.session_id,
+                "confirm": {
+                    "title": {"type": "plain_text", "text": "Revert the ticket?"},
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            "This will restore the original status and labels "
+                            "and clear the story points."
+                        ),
+                    },
+                    "confirm": {"type": "plain_text", "text": "Revert"},
+                    "deny": {"type": "plain_text", "text": "Keep it"},
+                },
+            }],
+        })
+
+    # ── Reverted banner ───────────────────────────────────────────────────
+    if reverted:
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"↩️ *Reverted.* <{issue_url}|{issue_key}> was restored to its "
+                    "original status and labels, and its story points cleared."
                 ),
             },
         })

@@ -16,6 +16,8 @@ Session shape:
     issue_description: str        — flattened Jira description text
     issue_reporter: str           — Jira reporter display name
     description_expanded: bool    — whether the card is showing the description
+    original_state: dict | None   — pre-update snapshot for revert
+    reverted: bool                — whether the Jira update was reverted
 """
 
 from __future__ import annotations
@@ -38,6 +40,8 @@ class Session:
     issue_description: str = ""
     issue_reporter: str = ""
     description_expanded: bool = False
+    original_state: dict | None = None  # pre-update {status, labels, story_points}
+    reverted: bool = False
 
 
 @dataclass
