@@ -83,6 +83,19 @@ def handle_point(ack, command, respond, client):
         )
         return
 
+    # A Jira identity is also required, from either this channel's own
+    # token or the org-wide fallback -- without one there's nothing to
+    # authenticate to Jira with.
+    if not cfg.get("jira_api_token"):
+        respond(
+            response_type="ephemeral",
+            text=(
+                "🔒 This channel doesn't have a Jira API token configured yet. "
+                "Run `/point-config` and add one under *Jira API token* first."
+            ),
+        )
+        return
+
     try:
         issue = jira_client.get_issue(issue_key, cfg)
     except Exception as exc:
@@ -465,23 +478,43 @@ def handle_config_submit(ack, view, body, client):
     allowed_projects = [
         pk.strip().upper() for pk in projects_raw.split(",") if pk.strip()
     ]
+    jira_email = values["jira_email"]["value"]["value"].strip()
 
-    saved = channel_config.set_channel_config(
-        channel_id,
-        {
-            "target_status": target_status,
-            "labels_to_remove": labels_to_remove,
-            "story_points_field": story_points_field,
-            "allowed_projects": allowed_projects,
-        },
-        body["user"]["id"],
-    )
+    updates = {
+        "target_status": target_status,
+        "labels_to_remove": labels_to_remove,
+        "story_points_field": story_points_field,
+        "allowed_projects": allowed_projects,
+        "jira_email": jira_email,
+    }
+
+    # The token field is never pre-filled (a secret shouldn't be echoed back
+    # into the modal), so unlike every other field here, blank means "leave
+    # whatever's already stored alone" -- not "clear it". Only a non-blank
+    # submission touches it.
+    token_warning = None
+    jira_api_token_raw = (values["jira_api_token"]["value"]["value"] or "").strip()
+    if jira_api_token_raw:
+        try:
+            updates["jira_api_token"] = channel_config.encrypt_token(jira_api_token_raw)
+        except channel_config.EncryptionNotConfigured as exc:
+            token_warning = str(exc)
+
+    saved = channel_config.set_channel_config(channel_id, updates, body["user"]["id"])
+
+    text = "Config saved for this channel."
+    blocks = build_config_saved_message(saved)
+    if token_warning:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"⚠️ Jira token *not* saved: {token_warning}"}],
+        })
 
     client.chat_postEphemeral(
         channel=channel_id,
         user=body["user"]["id"],
-        text="Config saved for this channel.",
-        blocks=build_config_saved_message(saved),
+        text=text,
+        blocks=blocks,
     )
 
 
