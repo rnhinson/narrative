@@ -55,11 +55,23 @@ def handle_point(ack, command, respond, client):
 
     cfg = channel_config.get_channel_config(command["channel_id"])
 
-    # Project scoping: if this channel restricts which Jira projects it may
-    # point, reject issue keys outside that set before we ever touch Jira.
+    # Project scoping is required, not optional: a channel must explicitly
+    # allow-list its Jira project(s) via /point-config before /point works
+    # at all -- prevents pointing tickets into the wrong project by default.
     allowed_projects = cfg.get("allowed_projects") or []
+    if not allowed_projects:
+        respond(
+            response_type="ephemeral",
+            text=(
+                "🔒 This channel hasn't been set up for pointing yet. Run "
+                "`/point-config` and add your team's Jira project(s) under "
+                "*Allowed Jira projects* first."
+            ),
+        )
+        return
+
     project_key = issue_key.split("-", 1)[0]
-    if allowed_projects and project_key not in allowed_projects:
+    if project_key not in allowed_projects:
         respond(
             response_type="ephemeral",
             text=(

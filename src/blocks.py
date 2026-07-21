@@ -385,7 +385,8 @@ def build_config_modal(channel_id: str, config: dict, org_defaults: dict) -> dic
                 "type": "plain_text",
                 "text": (
                     "Comma-separated project short codes this channel may point "
-                    "(e.g. PLAT, INFRA). Leave blank to allow any project."
+                    "(e.g. PLAT, INFRA). Required before /point will work in "
+                    "this channel."
                 ),
             },
             "optional": True,
