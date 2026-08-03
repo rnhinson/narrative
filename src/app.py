@@ -23,6 +23,7 @@ import jira as jira_client  # noqa: E402
 import config as channel_config  # noqa: E402
 from blocks import (  # noqa: E402
     POINT_VALUES,
+    DESCRIPTION_INLINE_LIMIT,
     build_voting_message,
     build_config_modal,
     build_config_saved_message,
@@ -160,6 +161,23 @@ def handle_point(ack, command, respond, client):
         blocks=build_voting_message(session, stats),
     )
 
+    # Post long descriptions as a thread reply so the card stays clean.
+    description = issue.get("description", "")
+    if description and len(description) > DESCRIPTION_INLINE_LIMIT:
+        if len(description) > 3800:
+            description = (
+                description[:3800].rstrip()
+                + f"\n\n_…truncated — <{issue['url']}|view full ticket>_"
+            )
+        try:
+            client.chat_postMessage(
+                channel=command["channel_id"],
+                thread_ts=posted["ts"],
+                text=f"📋 *Full description for <{issue['url']}|{issue_key}>:*\n\n{description}",
+            )
+        except Exception as exc:
+            logger.warning("Thread description post failed: %s", exc)
+
 
 # ── Vote buttons ──────────────────────────────────────────────────────────────
 def handle_vote(ack, action, body, client):
@@ -273,6 +291,7 @@ def handle_revote(ack, action, body, client):
 
     session.votes = {}
     session.revealed = False
+    session.cancelled = False
     session.override_points = None
     stats = store.get_vote_stats(session)
 
@@ -280,6 +299,29 @@ def handle_revote(ack, action, body, client):
         channel=channel_id,
         ts=message_ts,
         text=f"Story point vote for {session.issue_key} — re-voting",
+        blocks=build_voting_message(session, stats),
+    )
+
+
+# ── Cancel pointing ───────────────────────────────────────────────────────────
+@app.action("cancel_pointing")
+def handle_cancel_pointing(ack, action, body, client):
+    ack()
+    channel_id = body["channel"]["id"]
+    message_ts = body["message"]["ts"]
+    session_id = action["value"]
+
+    session = store.get_session(session_id)
+    if not session:
+        return
+
+    store.set_cancelled(session_id)
+    stats = store.get_vote_stats(session)
+
+    client.chat_update(
+        channel=channel_id,
+        ts=message_ts,
+        text=f"Story point vote for {session.issue_key} — cancelled",
         blocks=build_voting_message(session, stats),
     )
 
