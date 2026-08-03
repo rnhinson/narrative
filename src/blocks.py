@@ -402,6 +402,62 @@ def build_config_modal(channel_id: str, config: dict, org_defaults: dict) -> dic
         },
         {
             "type": "input",
+            "block_id": "jira_email",
+            "label": {
+                "type": "plain_text",
+                "text": "Jira email",
+                "emoji": True,
+            },
+            "hint": {
+                "type": "plain_text",
+                "text": "Email for the Jira account this channel authenticates as.",
+            },
+            "optional": True,
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "value",
+                "initial_value": config["jira_email"],
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": org_defaults["jira_email"] or "e.g. you@company.com",
+                },
+            },
+        },
+        {
+            "type": "input",
+            "block_id": "jira_api_token",
+            "label": {
+                "type": "plain_text",
+                "text": "Jira API token",
+                "emoji": True,
+            },
+            "hint": {
+                "type": "plain_text",
+                "text": (
+                    "Generate at id.atlassian.com/manage-profile/security/api-tokens. "
+                    "Required before /point will work in this channel. Stored "
+                    "encrypted and never shown again -- leave blank to keep the "
+                    "current one; type a new value to replace it."
+                    + (
+                        "  🔒 A token is currently configured for this channel."
+                        if config.get("has_channel_token")
+                        else "  No channel-specific token is set yet."
+                    )
+                ),
+            },
+            "optional": True,
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "value",
+                # Deliberately never pre-filled -- see hint above.
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Paste a new token to set/replace it",
+                },
+            },
+        },
+        {
+            "type": "input",
             "block_id": "target_status",
             "label": {
                 "type": "plain_text",
@@ -542,7 +598,9 @@ def build_config_saved_message(config: dict) -> list[dict]:
     if config["allowed_projects"]:
         projects_text = ", ".join(f"`{pk}`" for pk in config["allowed_projects"])
     else:
-        projects_text = "_any project_"
+        projects_text = "_none set — /point is blocked until this is set_"
+    email_text = config["jira_email"] or "_none set_"
+    token_text = "🔒 configured" if config["jira_api_token"] else "_none set — /point is blocked until this is set_"
     return [
         {
             "type": "section",
@@ -551,6 +609,8 @@ def build_config_saved_message(config: dict) -> list[dict]:
                 "text": (
                     f"✅ *Config saved for this channel!*\n\n"
                     f"*Allowed projects:* {projects_text}\n"
+                    f"*Jira email:* {email_text}\n"
+                    f"*Jira API token:* {token_text}\n"
                     f"*Target status:* `{config['target_status']}`\n"
                     f"*Labels to remove:* {labels_text}\n"
                     f"*Story points field:* `{config['story_points_field']}`"
