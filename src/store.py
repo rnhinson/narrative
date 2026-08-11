@@ -42,6 +42,7 @@ class Session:
     description_expanded: bool = False
     original_state: dict | None = None  # pre-update {status, labels, story_points}
     reverted: bool = False
+    cancelled: bool = False
 
 
 @dataclass
@@ -111,6 +112,13 @@ def set_updated(session_id: str) -> Session | None:
     session = _sessions.get(session_id)
     if session:
         session.updated = True
+    return session
+
+
+def set_cancelled(session_id: str) -> Session | None:
+    session = _sessions.get(session_id)
+    if session:
+        session.cancelled = True
     return session
 
 

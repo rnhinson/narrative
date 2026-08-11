@@ -8,6 +8,8 @@ from datetime import datetime
 # Fibonacci-ish story point scale
 POINT_VALUES = ["1", "2", "3", "5", "8", "13", "21", "?", "☕"]
 
+DESCRIPTION_INLINE_LIMIT = 500
+
 
 def build_voting_message(session, stats) -> list[dict]:
     """
@@ -21,6 +23,7 @@ def build_voting_message(session, stats) -> list[dict]:
     revealed = session.revealed
     updated = session.updated
     reverted = getattr(session, "reverted", False)
+    cancelled = getattr(session, "cancelled", False)
 
     vote_count = stats.vote_count
     all_agree = stats.all_agree
@@ -51,40 +54,43 @@ def build_voting_message(session, stats) -> list[dict]:
         },
     })
 
-    # Show/Hide full description toggle -- only when the ticket has one.
+    # Description toggle for short tickets; static note for long ones.
     if description:
-        blocks.append({
-            "type": "actions",
-            "elements": [{
-                "type": "button",
-                "text": {
-                    "type": "plain_text",
-                    "text": (
-                        "Hide Full Description" if expanded
-                        else "Show Full Description"
-                    ),
-                    "emoji": True,
-                },
-                "action_id": "toggle_description",
-                "value": session.session_id,
-            }],
-        })
-
-    if description and expanded:
-        if len(description) > 2800:  # Slack section text caps at 3000 chars
-            description = (
-                description[:2800].rstrip()
-                + f"…\n\n_(truncated — <{issue_url}|view full ticket>)_"
-            )
-        blocks.append({
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Description:*\n{description}"},
-        })
+        if len(description) <= DESCRIPTION_INLINE_LIMIT:
+            blocks.append({
+                "type": "actions",
+                "elements": [{
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": (
+                            "Hide Description" if expanded
+                            else "Show Description"
+                        ),
+                        "emoji": True,
+                    },
+                    "action_id": "toggle_description",
+                    "value": session.session_id,
+                }],
+            })
+            if expanded:
+                blocks.append({
+                    "type": "section",
+                    "text": {"type": "mrkdwn", "text": f"*Description:*\n{description}"},
+                })
+        else:
+            blocks.append({
+                "type": "context",
+                "elements": [{
+                    "type": "mrkdwn",
+                    "text": "📋 _Description is long — full text posted in thread._",
+                }],
+            })
 
     blocks.append({"type": "divider"})
 
-    # ── Vote buttons (hidden after reveal) ────────────────────────────────
-    if not revealed:
+    # ── Vote buttons (hidden after reveal or cancel) ──────────────────────
+    if not revealed and not cancelled:
         chunks = [POINT_VALUES[i:i+5] for i in range(0, len(POINT_VALUES), 5)]
         for chunk in chunks:
             blocks.append({
@@ -148,27 +154,70 @@ def build_voting_message(session, stats) -> list[dict]:
     blocks.append({"type": "divider"})
 
     # ── Action buttons ────────────────────────────────────────────────────
-    if not revealed:
+    if not revealed and not cancelled:
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "👁️ Reveal Votes", "emoji": True},
+                    "style": "danger",
+                    "action_id": "reveal_votes",
+                    "value": session.session_id,
+                    "confirm": {
+                        "title": {"type": "plain_text", "text": "Reveal votes?"},
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": (
+                                "This will show everyone's votes. "
+                                "Make sure everyone has voted!"
+                            ),
+                        },
+                        "confirm": {"type": "plain_text", "text": "Reveal"},
+                        "deny": {"type": "plain_text", "text": "Not yet"},
+                    },
+                },
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "✖️ Cancel Pointing", "emoji": True},
+                    "action_id": "cancel_pointing",
+                    "value": session.session_id,
+                    "confirm": {
+                        "title": {"type": "plain_text", "text": "Cancel this vote?"},
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": (
+                                f"This will cancel pointing for *{issue_key}*. "
+                                "Jira won't be updated. You can re-point later."
+                            ),
+                        },
+                        "confirm": {"type": "plain_text", "text": "Cancel pointing"},
+                        "deny": {"type": "plain_text", "text": "Keep going"},
+                    },
+                },
+            ],
+        })
+
+    # ── Cancelled banner ──────────────────────────────────────────────────
+    if cancelled:
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"✖️ *Pointing cancelled.* <{issue_url}|{issue_key}> was not "
+                    "updated in Jira."
+                ),
+            },
+        })
         blocks.append({
             "type": "actions",
             "elements": [{
                 "type": "button",
-                "text": {"type": "plain_text", "text": "👁️ Reveal Votes", "emoji": True},
-                "style": "danger",
-                "action_id": "reveal_votes",
+                "text": {"type": "plain_text", "text": "🔄 Re-point", "emoji": True},
+                "style": "primary",
+                "action_id": "revote",
                 "value": session.session_id,
-                "confirm": {
-                    "title": {"type": "plain_text", "text": "Reveal votes?"},
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": (
-                            "This will show everyone's votes. "
-                            "Make sure everyone has voted!"
-                        ),
-                    },
-                    "confirm": {"type": "plain_text", "text": "Reveal"},
-                    "deny": {"type": "plain_text", "text": "Not yet"},
-                },
             }],
         })
 
