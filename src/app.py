@@ -84,9 +84,19 @@ def handle_point(ack, command, respond, client):
         )
         return
 
-    # A Jira identity is also required, from either this channel's own
-    # token or the org-wide fallback -- without one there's nothing to
-    # authenticate to Jira with.
+    # A Jira site and identity are also required, from either this channel's
+    # own config or the org-wide fallback -- without these there's nothing
+    # to authenticate to or address requests at.
+    if not cfg.get("jira_base_url"):
+        respond(
+            response_type="ephemeral",
+            text=(
+                "🔒 This channel doesn't have a Jira site configured yet. "
+                "Run `/point-config` and add one under *Jira site URL* first."
+            ),
+        )
+        return
+
     if not cfg.get("jira_api_token"):
         respond(
             response_type="ephemeral",
@@ -521,6 +531,7 @@ def handle_config_submit(ack, view, body, client):
         pk.strip().upper() for pk in projects_raw.split(",") if pk.strip()
     ]
     jira_email = values["jira_email"]["value"]["value"].strip()
+    jira_base_url = values["jira_base_url"]["value"]["value"].strip().rstrip("/")
 
     updates = {
         "target_status": target_status,
@@ -528,6 +539,7 @@ def handle_config_submit(ack, view, body, client):
         "story_points_field": story_points_field,
         "allowed_projects": allowed_projects,
         "jira_email": jira_email,
+        "jira_base_url": jira_base_url,
     }
 
     # The token field is never pre-filled (a secret shouldn't be echoed back

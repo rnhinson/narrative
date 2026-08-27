@@ -451,6 +451,32 @@ def build_config_modal(channel_id: str, config: dict, org_defaults: dict) -> dic
         },
         {
             "type": "input",
+            "block_id": "jira_base_url",
+            "label": {
+                "type": "plain_text",
+                "text": "Jira site URL",
+                "emoji": True,
+            },
+            "hint": {
+                "type": "plain_text",
+                "text": (
+                    "Your Jira Cloud site, e.g. https://yourcompany.atlassian.net. "
+                    "Required before /point will work in this channel."
+                ),
+            },
+            "optional": True,
+            "element": {
+                "type": "plain_text_input",
+                "action_id": "value",
+                "initial_value": config["jira_base_url"],
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": org_defaults["jira_base_url"] or "e.g. https://yourcompany.atlassian.net",
+                },
+            },
+        },
+        {
+            "type": "input",
             "block_id": "jira_email",
             "label": {
                 "type": "plain_text",
@@ -648,6 +674,7 @@ def build_config_saved_message(config: dict) -> list[dict]:
         projects_text = ", ".join(f"`{pk}`" for pk in config["allowed_projects"])
     else:
         projects_text = "_none set — /point is blocked until this is set_"
+    base_url_text = config["jira_base_url"] or "_none set — /point is blocked until this is set_"
     email_text = config["jira_email"] or "_none set_"
     token_text = "🔒 configured" if config["jira_api_token"] else "_none set — /point is blocked until this is set_"
     return [
@@ -658,6 +685,7 @@ def build_config_saved_message(config: dict) -> list[dict]:
                 "text": (
                     f"✅ *Config saved for this channel!*\n\n"
                     f"*Allowed projects:* {projects_text}\n"
+                    f"*Jira site URL:* {base_url_text}\n"
                     f"*Jira email:* {email_text}\n"
                     f"*Jira API token:* {token_text}\n"
                     f"*Target status:* `{config['target_status']}`\n"

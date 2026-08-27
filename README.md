@@ -18,7 +18,7 @@ A Slack bot for running Agile story point voting sessions with Jira integration.
 - **Re-vote** — resets the round without losing the session
 - **Update Jira** — one click when ready: sets story points, removes labels, transitions the ticket
 - **Project scoping (required)** — a channel must configure its allowed Jira project(s) before `/point` works at all, so teams can't accidentally point tickets outside their own projects
-- **Per-channel Jira identity (required)** — a channel authenticates to Jira with either an org-wide fallback token or its own, generated and pasted in via `/point-config`; encrypted at rest and never shown again
+- **Per-channel Jira site and identity (required)** — a channel points at its own Jira instance and authenticates with either an org-wide fallback or its own site URL/email/token, set via `/point-config`; the API token is encrypted at rest and never shown again
 - **`/point-config`** — per-channel config so each team can set their own allowed projects, Jira identity, status, labels, and field ID
 
 ---
@@ -71,7 +71,7 @@ All settings can be set org-wide in `.env`, and overridden per-channel using `/p
 | `SLACK_BOT_TOKEN` | Bot User OAuth Token (`xoxb-...`) | required |
 | `SLACK_SIGNING_SECRET` | From Basic Information in your Slack App | required |
 | `SLACK_APP_TOKEN` | App-Level Token (`xapp-...`) — enables Socket Mode | required |
-| `JIRA_BASE_URL` | e.g. `https://yourcompany.atlassian.net` | required |
+| `JIRA_BASE_URL` | Org-wide fallback Jira site, e.g. `https://yourcompany.atlassian.net` — channels can set their own via `/point-config` instead | _(empty)_ |
 | `JIRA_EMAIL` | Org-wide fallback Jira identity — channels can set their own via `/point-config` instead | _(empty)_ |
 | `JIRA_API_TOKEN` | Org-wide fallback Jira API token — see above | _(empty)_ |
 | `CONFIG_ENCRYPTION_KEY` | Fernet key encrypting per-channel Jira tokens at rest; required before a channel can save its own token via `/point-config` (see below) | _(empty)_ |
@@ -90,13 +90,14 @@ curl -u your@email.com:YOUR_API_TOKEN \
 
 ### Per-channel config
 
-Any channel member can run `/point-config` to override the org-wide defaults for their channel — including **Allowed Jira projects** and a **Jira email / API token** (both required before `/point` works in that channel — see below), target status, labels to remove, and the story-points field ID. Settings are persisted to `config-store.json` and survive restarts.
+Any channel member can run `/point-config` to override the org-wide defaults for their channel — including **Allowed Jira projects**, a **Jira site URL**, and a **Jira email / API token** (all required before `/point` works in that channel — see below), target status, labels to remove, and the story-points field ID. Settings are persisted to `config-store.json` and survive restarts. This means the bot can be deployed with no org-wide Jira config at all — every channel just configures its own Jira site and identity via `/point-config`.
 
-### A Jira project and a Jira identity are both required
+### A Jira project, site, and identity are all required
 
 `/point` refuses to run in a channel until it has:
 1. At least one **allowed Jira project**, either inherited from the org-wide `JIRA_ALLOWED_PROJECTS` default or set via `/point-config`.
-2. A **Jira email + API token** to authenticate with, either the org-wide `JIRA_EMAIL`/`JIRA_API_TOKEN` fallback or a channel's own, set via `/point-config`.
+2. A **Jira site URL**, either the org-wide `JIRA_BASE_URL` fallback or a channel's own, set via `/point-config`.
+3. A **Jira email + API token** to authenticate with, either the org-wide `JIRA_EMAIL`/`JIRA_API_TOKEN` fallback or a channel's own, set via `/point-config`.
 
 This prevents a channel from pointing into the wrong project, or with the wrong Jira identity, before anyone's configured it. Running `/point` in an unconfigured channel returns an ephemeral message pointing the user at `/point-config`.
 
