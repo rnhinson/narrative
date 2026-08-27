@@ -77,6 +77,10 @@ _ORG_DEFAULTS = {
     # config-store.json, so they don't need encryption.
     "jira_email": os.environ.get("JIRA_EMAIL", ""),
     "jira_api_token": os.environ.get("JIRA_API_TOKEN", ""),
+    # Jira site URL. Not a secret, so no encryption -- same fallback pattern
+    # as jira_email/target_status/etc. Empty here means every channel must
+    # set its own via /point-config (see app.py's handle_point).
+    "jira_base_url": os.environ.get("JIRA_BASE_URL", "").rstrip("/"),
 }
 
 # In-memory cache
@@ -126,6 +130,10 @@ def get_channel_config(channel_id: str) -> dict:
             "allowed_projects", _ORG_DEFAULTS["allowed_projects"]
         ),
         "jira_email": saved.get("jira_email", _ORG_DEFAULTS["jira_email"]),
+        "jira_base_url": (
+            saved.get("jira_base_url", "").rstrip("/")
+            or _ORG_DEFAULTS["jira_base_url"]
+        ),
         "jira_api_token": (
             _decrypt_token(saved_token) if saved_token
             else _ORG_DEFAULTS["jira_api_token"]

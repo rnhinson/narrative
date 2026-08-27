@@ -1,18 +1,15 @@
 """
 Jira REST API client.
 
-The Jira site URL is a single org-wide setting (JIRA_BASE_URL). Credentials
-are per-channel: every function takes a ChannelConfig (from config.py) and
-authenticates with its jira_email/jira_api_token -- either a channel's own,
-or the org-wide fallback -- see config.get_channel_config.
+Both the Jira site URL and credentials are per-channel: every function takes
+a ChannelConfig (from config.py) and uses its jira_base_url/jira_email/
+jira_api_token -- either a channel's own, or the org-wide fallback -- see
+config.get_channel_config.
 """
 
 from __future__ import annotations
-import os
 import re
 import httpx
-
-JIRA_BASE_URL = os.environ.get("JIRA_BASE_URL", "").rstrip("/")
 
 _HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
 
@@ -27,9 +24,10 @@ def get_issue(issue_key: str, channel_config) -> dict:
     Returns a plain dict:
         {key, summary, description, labels, status, story_points, url}
     """
+    base_url = channel_config["jira_base_url"]
     field = channel_config["story_points_field"]
     url = (
-        f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
+        f"{base_url}/rest/api/3/issue/{issue_key}"
         f"?fields=summary,labels,status,description,reporter,{field}"
     )
     resp = httpx.get(url, auth=_auth_from(channel_config), headers=_HEADERS, timeout=10)
@@ -44,7 +42,7 @@ def get_issue(issue_key: str, channel_config) -> dict:
         "labels": fields.get("labels", []),
         "status": (fields.get("status") or {}).get("name"),
         "story_points": fields.get(field),
-        "url": f"{JIRA_BASE_URL}/browse/{issue_key}",
+        "url": f"{base_url}/browse/{issue_key}",
     }
 
 
@@ -88,7 +86,7 @@ def _adf_to_text(node) -> str:
 
 
 def _get_transitions(issue_key: str, channel_config) -> list[dict]:
-    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/transitions"
+    url = f"{channel_config['jira_base_url']}/rest/api/3/issue/{issue_key}/transitions"
     resp = httpx.get(url, auth=_auth_from(channel_config), headers=_HEADERS, timeout=10)
     resp.raise_for_status()
     return resp.json()["transitions"]
@@ -102,6 +100,7 @@ def update_issue(issue_key: str, story_points: str, channel_config) -> dict:
 
     Returns a summary dict of what was done.
     """
+    base_url = channel_config["jira_base_url"]
     story_points_field = channel_config["story_points_field"]
     labels_to_remove = channel_config["labels_to_remove"]
     target_status = channel_config["target_status"]
@@ -112,7 +111,7 @@ def update_issue(issue_key: str, story_points: str, channel_config) -> dict:
 
     # Update fields
     auth = _auth_from(channel_config)
-    issue_url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
+    issue_url = f"{base_url}/rest/api/3/issue/{issue_key}"
     resp = httpx.put(
         issue_url,
         auth=auth,
@@ -134,7 +133,7 @@ def update_issue(issue_key: str, story_points: str, channel_config) -> dict:
         )
 
     resp = httpx.post(
-        f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/transitions",
+        f"{base_url}/rest/api/3/issue/{issue_key}/transitions",
         auth=auth,
         headers=_HEADERS,
         json={"transition": {"id": match["id"]}},
@@ -167,13 +166,14 @@ def revert_issue(issue_key: str, original: dict, channel_config) -> dict:
     from the current status. Fields (labels, points) always restore; the
     returned `status_restored` flag says whether the status move succeeded.
     """
+    base_url = channel_config["jira_base_url"]
     story_points_field = channel_config["story_points_field"]
     orig_labels = original.get("labels", []) or []
     orig_status = original.get("status")
 
     # Restore labels and clear story points (None empties the field).
     auth = _auth_from(channel_config)
-    issue_url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
+    issue_url = f"{base_url}/rest/api/3/issue/{issue_key}"
     resp = httpx.put(
         issue_url,
         auth=auth,
@@ -199,7 +199,7 @@ def revert_issue(issue_key: str, original: dict, channel_config) -> dict:
         )
         if match:
             resp = httpx.post(
-                f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/transitions",
+                f"{base_url}/rest/api/3/issue/{issue_key}/transitions",
                 auth=auth,
                 headers=_HEADERS,
                 json={"transition": {"id": match["id"]}},
@@ -213,5 +213,5 @@ def revert_issue(issue_key: str, original: dict, channel_config) -> dict:
         "status_restored": status_restored,
         "labels": orig_labels,
         "story_points": None,
-        "url": f"{JIRA_BASE_URL}/browse/{issue_key}",
+        "url": f"{base_url}/browse/{issue_key}",
     }
