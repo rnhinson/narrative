@@ -197,9 +197,10 @@ def handle_vote(ack, action, body, client):
     channel_id = body["channel"]["id"]
     message_ts = body["message"]["ts"]
     user_id = body["user"]["id"]
-    user_name, avatar_url = _lookup_user(
-        client, user_id, body["user"].get("username", user_id)
-    )
+    user_name = body["user"].get("username", user_id)
+    avatar_url = ""
+    if channel_config.get_channel_config(channel_id)["show_avatars"]:
+        user_name, avatar_url = _lookup_user(client, user_id, user_name)
 
     session = store.get_session_by_message(channel_id, message_ts)
     if not session:
@@ -536,8 +537,9 @@ def handle_config_submit(ack, view, body, client):
     allowed_projects = [
         pk.strip().upper() for pk in projects_raw.split(",") if pk.strip()
     ]
-    jira_email = values["jira_email"]["value"]["value"].strip()
-    jira_base_url = values["jira_base_url"]["value"]["value"].strip().rstrip("/")
+    jira_email = (values["jira_email"]["value"]["value"] or "").strip()
+    jira_base_url = (values["jira_base_url"]["value"]["value"] or "").strip().rstrip("/")
+    show_avatars = bool(values["show_avatars"]["value"]["selected_options"])
 
     updates = {
         "target_status": target_status,
@@ -546,6 +548,7 @@ def handle_config_submit(ack, view, body, client):
         "allowed_projects": allowed_projects,
         "jira_email": jira_email,
         "jira_base_url": jira_base_url,
+        "show_avatars": show_avatars,
     }
 
     # The token field is never pre-filled (a secret shouldn't be echoed back

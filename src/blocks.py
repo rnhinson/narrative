@@ -376,210 +376,112 @@ def build_voting_message(session, stats) -> list[dict]:
 # ── /point-config modal builders ─────────────────────────────────────────────
 
 def build_config_modal(channel_id: str, config: dict, org_defaults: dict) -> dict:
-    labels_value = ", ".join(config["labels_to_remove"])
-    org_labels_value = ", ".join(org_defaults["labels_to_remove"])
-
     if config["is_customized"]:
         context_text = (
-            "⚙️ This channel has custom settings. "
-            "Org defaults shown as placeholder text."
+            "This channel has its own settings. Empty fields use the org "
+            "defaults, shown as placeholder text."
         )
     else:
         context_text = (
-            "⚙️ Using org-wide defaults. "
-            "Fill in any field to override for this channel."
+            "This channel uses the org defaults. Fill in a field to "
+            "override it here."
         )
 
-    projects_value = ", ".join(config["allowed_projects"])
-    org_projects_value = ", ".join(org_defaults["allowed_projects"])
+    token_status = (
+        "🔒 A token is saved for this channel."
+        if config.get("has_channel_token")
+        else "No token saved for this channel yet."
+    )
+
+    avatars_option = {
+        "text": {"type": "plain_text", "text": "Show voter avatars"},
+        "description": {
+            "type": "plain_text",
+            "text": (
+                "Needs the users:read Slack scope. When off, voters show "
+                "as @mentions."
+            ),
+        },
+        "value": "on",
+    }
+    avatars_element = {
+        "type": "checkboxes",
+        "action_id": "value",
+        "options": [avatars_option],
+    }
+    if config["show_avatars"]:
+        avatars_element["initial_options"] = [avatars_option]
 
     modal_blocks = [
-        {"type": "context", "elements": [{"type": "mrkdwn", "text": context_text}]},
-        {"type": "divider"},
+        {"type": "context", "elements": [
+            {"type": "mrkdwn", "text": context_text},
+            {"type": "mrkdwn", "text": (
+                "`/point` needs a Jira site, email, API token and at least "
+                "one project, set here or in the org defaults."
+            )},
+        ]},
+
+        # ── Jira connection ──────────────────────────────────────────────
+        {"type": "header", "text": {"type": "plain_text", "text": "Jira connection"}},
+        _text_input(
+            "jira_base_url", "Jira site URL",
+            config["jira_base_url"],
+            org_defaults["jira_base_url"] or "https://yourcompany.atlassian.net",
+        ),
+        _text_input(
+            "jira_email", "Jira email",
+            config["jira_email"],
+            org_defaults["jira_email"] or "you@company.com",
+            hint="The Jira account this channel acts as.",
+        ),
+        # Deliberately never pre-filled: the token is a secret.
+        _text_input(
+            "jira_api_token", "Jira API token",
+            "",
+            "Paste a new token to replace it",
+            hint=(
+                "Create one at id.atlassian.com under Security → API tokens. "
+                f"Leave blank to keep the current token. {token_status}"
+            ),
+        ),
+
+        # ── Pointing ─────────────────────────────────────────────────────
+        {"type": "header", "text": {"type": "plain_text", "text": "Pointing"}},
+        _text_input(
+            "allowed_projects", "Allowed projects",
+            ", ".join(config["allowed_projects"]),
+            ", ".join(org_defaults["allowed_projects"]) or "PLAT, INFRA",
+            hint="Project keys this channel can point, separated by commas.",
+        ),
+        _text_input(
+            "story_points_field", "Story points field ID",
+            config["story_points_field"],
+            org_defaults["story_points_field"],
+            hint="Usually customfield_10016 or customfield_10028.",
+            optional=False,
+        ),
+        _text_input(
+            "target_status", "Move ticket to",
+            config["target_status"],
+            org_defaults["target_status"],
+            hint="The Jira transition to run after pointing. Must match its name exactly.",
+            optional=False,
+        ),
+        _text_input(
+            "labels_to_remove", "Labels to remove",
+            ", ".join(config["labels_to_remove"]),
+            ", ".join(org_defaults["labels_to_remove"]) or "needs-pointing, unpointed",
+            hint="Removed from the ticket after pointing, separated by commas.",
+        ),
+
+        # ── Voting card ──────────────────────────────────────────────────
+        {"type": "header", "text": {"type": "plain_text", "text": "Voting card"}},
         {
             "type": "input",
-            "block_id": "allowed_projects",
-            "label": {
-                "type": "plain_text",
-                "text": "Allowed Jira projects",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Comma-separated project short codes this channel may point "
-                    "(e.g. PLAT, INFRA). Required before /point will work in "
-                    "this channel."
-                ),
-            },
+            "block_id": "show_avatars",
+            "label": {"type": "plain_text", "text": "Voters"},
             "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": projects_value,
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_projects_value or "e.g. PLAT, INFRA",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "jira_base_url",
-            "label": {
-                "type": "plain_text",
-                "text": "Jira site URL",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Your Jira Cloud site, e.g. https://yourcompany.atlassian.net. "
-                    "Required before /point will work in this channel."
-                ),
-            },
-            "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": config["jira_base_url"],
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_defaults["jira_base_url"] or "e.g. https://yourcompany.atlassian.net",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "jira_email",
-            "label": {
-                "type": "plain_text",
-                "text": "Jira email",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": "Email for the Jira account this channel authenticates as.",
-            },
-            "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": config["jira_email"],
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_defaults["jira_email"] or "e.g. you@company.com",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "jira_api_token",
-            "label": {
-                "type": "plain_text",
-                "text": "Jira API token",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Generate at id.atlassian.com/manage-profile/security/api-tokens. "
-                    "Required before /point will work in this channel. Stored "
-                    "encrypted and never shown again -- leave blank to keep the "
-                    "current one; type a new value to replace it."
-                    + (
-                        "  🔒 A token is currently configured for this channel."
-                        if config.get("has_channel_token")
-                        else "  No channel-specific token is set yet."
-                    )
-                ),
-            },
-            "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                # Deliberately never pre-filled -- see hint above.
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Paste a new token to set/replace it",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "target_status",
-            "label": {
-                "type": "plain_text",
-                "text": "Jira target status",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Workflow transition name to move the ticket into after "
-                    "pointing (must match exactly)."
-                ),
-            },
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": config["target_status"],
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_defaults["target_status"],
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "labels_to_remove",
-            "label": {
-                "type": "plain_text",
-                "text": "Labels to remove",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Comma-separated list of Jira labels to strip from the "
-                    "ticket when updating."
-                ),
-            },
-            "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": labels_value,
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_labels_value or "e.g. needs-pointing, unpointed",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "story_points_field",
-            "label": {
-                "type": "plain_text",
-                "text": "Story points field ID",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Jira custom field ID. Find via GET /rest/api/3/field. "
-                    "Common: customfield_10016 or customfield_10028."
-                ),
-            },
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": config["story_points_field"],
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_defaults["story_points_field"],
-                },
-            },
+            "element": avatars_element,
         },
     ]
 
@@ -639,6 +541,29 @@ def build_config_modal(channel_id: str, config: dict, org_defaults: dict) -> dic
     }
 
 
+def _text_input(
+    block_id: str, label: str, value: str, placeholder: str,
+    hint: str | None = None, optional: bool = True,
+) -> dict:
+    element = {
+        "type": "plain_text_input",
+        "action_id": "value",
+        "placeholder": {"type": "plain_text", "text": placeholder},
+    }
+    if value:
+        element["initial_value"] = value
+    block = {
+        "type": "input",
+        "block_id": block_id,
+        "label": {"type": "plain_text", "text": label},
+        "optional": optional,
+        "element": element,
+    }
+    if hint:
+        block["hint"] = {"type": "plain_text", "text": hint}
+    return block
+
+
 def build_config_saved_message(config: dict) -> list[dict]:
     if config["labels_to_remove"]:
         labels_text = ", ".join(f"`{lb}`" for lb in config["labels_to_remove"])
@@ -664,7 +589,8 @@ def build_config_saved_message(config: dict) -> list[dict]:
                     f"*Jira API token:* {token_text}\n"
                     f"*Target status:* `{config['target_status']}`\n"
                     f"*Labels to remove:* {labels_text}\n"
-                    f"*Story points field:* `{config['story_points_field']}`"
+                    f"*Story points field:* `{config['story_points_field']}`\n"
+                    f"*Voter avatars:* {'on' if config['show_avatars'] else 'off'}"
                 ),
             },
         },

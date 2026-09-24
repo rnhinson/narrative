@@ -37,7 +37,7 @@ pip install -r requirements.txt
 ### 2. Create a Slack App
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From Scratch**
-2. Add **Bot Token Scopes** under OAuth & Permissions: `chat:write`, `chat:write.public`, `commands`, `users:read` (for voter avatars on the card)
+2. Add **Bot Token Scopes** under OAuth & Permissions: `chat:write`, `chat:write.public`, `commands`, and optionally `users:read` if you turn on voter avatars
 3. Create two **Slash Commands** — `/point` and `/point-config` (no Request URL needed in Socket Mode)
 4. Enable **Interactivity** (no Request URL needed in Socket Mode)
 5. Enable **Socket Mode** and generate an App-Level Token with `connections:write` scope — copy it as `SLACK_APP_TOKEN`
@@ -79,6 +79,7 @@ All settings can be set org-wide in `.env`, and overridden per-channel using `/p
 | `JIRA_LABELS_TO_REMOVE` | Comma-separated labels to strip | _(empty)_ |
 | `JIRA_STORY_POINTS_FIELD` | Jira custom field ID for story points | `customfield_10016` |
 | `JIRA_ALLOWED_PROJECTS` | Comma-separated project keys the bot may point (e.g. `PLAT,INFRA`) — **required** (org-wide or per-channel via `/point-config`) before `/point` works in a channel | _(empty)_ |
+| `SHOW_VOTER_AVATARS` | Show voter avatars on the voting card (`true`/`false`); needs the `users:read` scope. Channels can override it via `/point-config` | `false` |
 | `DATA_DIR` | Directory for persisting per-channel config | project root |
 
 **Finding your story points field ID:**
@@ -90,7 +91,7 @@ curl -u your@email.com:YOUR_API_TOKEN \
 
 ### Per-channel config
 
-Any channel member can run `/point-config` to override the org-wide defaults for their channel — including **Allowed Jira projects**, a **Jira site URL**, and a **Jira email / API token** (all required before `/point` works in that channel — see below), target status, labels to remove, and the story-points field ID. Settings are persisted to `config-store.json` and survive restarts. This means the bot can be deployed with no org-wide Jira config at all — every channel just configures its own Jira site and identity via `/point-config`.
+Any channel member can run `/point-config` to override the org-wide defaults for their channel — including **Allowed Jira projects**, a **Jira site URL**, and a **Jira email / API token** (all required before `/point` works in that channel — see below), target status, labels to remove, the story-points field ID, and whether the voting card shows voter avatars. Settings are persisted to `config-store.json` and survive restarts. This means the bot can be deployed with no org-wide Jira config at all — every channel just configures its own Jira site and identity via `/point-config`.
 
 ### A Jira project, site, and identity are all required
 
