@@ -131,6 +131,7 @@ def handle_point(ack, command, respond, client):
         initiated_by=command["user_id"],
         issue_description=issue.get("description", ""),
         issue_reporter=issue.get("reporter", ""),
+        issue_type=issue.get("issue_type", ""),
     )
     placeholder_stats = store.VoteStats(
         vote_count=0, all_agree=False, agreed_value=None, distribution={}
@@ -160,6 +161,7 @@ def handle_point(ack, command, respond, client):
         initiated_by=command["user_id"],
         issue_description=issue.get("description", ""),
         issue_reporter=issue.get("reporter", ""),
+        issue_type=issue.get("issue_type", ""),
     )
     stats = store.get_vote_stats(session)
 
@@ -196,6 +198,9 @@ def handle_vote(ack, action, body, client):
     message_ts = body["message"]["ts"]
     user_id = body["user"]["id"]
     user_name = body["user"].get("username", user_id)
+    avatar_url = ""
+    if channel_config.get_channel_config(channel_id)["show_avatars"]:
+        user_name, avatar_url = _lookup_user(client, user_id, user_name)
 
     session = store.get_session_by_message(channel_id, message_ts)
     if not session:
@@ -212,7 +217,9 @@ def handle_vote(ack, action, body, client):
         )
         return
 
-    store.add_vote(session.session_id, user_id, user_name, action["value"])
+    store.add_vote(
+        session.session_id, user_id, user_name, action["value"], avatar_url
+    )
     stats = store.get_vote_stats(session)
 
     client.chat_update(
@@ -530,8 +537,9 @@ def handle_config_submit(ack, view, body, client):
     allowed_projects = [
         pk.strip().upper() for pk in projects_raw.split(",") if pk.strip()
     ]
-    jira_email = values["jira_email"]["value"]["value"].strip()
-    jira_base_url = values["jira_base_url"]["value"]["value"].strip().rstrip("/")
+    jira_email = (values["jira_email"]["value"]["value"] or "").strip()
+    jira_base_url = (values["jira_base_url"]["value"]["value"] or "").strip().rstrip("/")
+    show_avatars = bool(values["show_avatars"]["value"]["selected_options"])
 
     updates = {
         "target_status": target_status,
@@ -540,6 +548,7 @@ def handle_config_submit(ack, view, body, client):
         "allowed_projects": allowed_projects,
         "jira_email": jira_email,
         "jira_base_url": jira_base_url,
+        "show_avatars": show_avatars,
     }
 
     # The token field is never pre-filled (a secret shouldn't be echoed back
@@ -608,6 +617,33 @@ def handle_reset_config(ack, action, body, client):
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
+# user_id -> (display name, avatar URL); profiles rarely change mid-session.
+_user_profiles: dict[str, tuple[str, str]] = {}
+
+
+def _lookup_user(client, user_id, fallback_name):
+    """
+    Return (display name, avatar URL) for the voter avatars on the card.
+    Needs the users:read scope; on failure falls back to (fallback_name, "")
+    and the card shows an @mention instead of an avatar.
+    """
+    if user_id in _user_profiles:
+        return _user_profiles[user_id]
+    try:
+        user = client.users_info(user=user_id)["user"]
+    except Exception as exc:
+        logger.warning("users.info failed for %s: %s", user_id, exc)
+        return fallback_name, ""
+    profile = user.get("profile") or {}
+    name = (
+        profile.get("display_name") or profile.get("real_name")
+        or user.get("name") or fallback_name
+    )
+    avatar_url = profile.get("image_48") or profile.get("image_72") or ""
+    _user_profiles[user_id] = (name, avatar_url)
+    return name, avatar_url
+
+
 def _post_ephemeral(client, channel_id, user_id, thread_ts, text):
     try:
         client.chat_postEphemeral(

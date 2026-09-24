@@ -22,13 +22,14 @@ def get_issue(issue_key: str, channel_config) -> dict:
     """
     Fetch summary, labels, status, description and story-points for an issue.
     Returns a plain dict:
-        {key, summary, description, labels, status, story_points, url}
+        {key, summary, description, reporter, issue_type, labels, status,
+         story_points, url}
     """
     base_url = channel_config["jira_base_url"]
     field = channel_config["story_points_field"]
     url = (
         f"{base_url}/rest/api/3/issue/{issue_key}"
-        f"?fields=summary,labels,status,description,reporter,{field}"
+        f"?fields=summary,labels,status,description,reporter,issuetype,{field}"
     )
     resp = httpx.get(url, auth=_auth_from(channel_config), headers=_HEADERS, timeout=10)
     resp.raise_for_status()
@@ -39,6 +40,7 @@ def get_issue(issue_key: str, channel_config) -> dict:
         "description": _adf_to_text(fields.get("description")),
         # displayName can be absent on GDPR-restricted instances -> "".
         "reporter": (fields.get("reporter") or {}).get("displayName", ""),
+        "issue_type": (fields.get("issuetype") or {}).get("name", ""),
         "labels": fields.get("labels", []),
         "status": (fields.get("status") or {}).get("name"),
         "story_points": fields.get(field),

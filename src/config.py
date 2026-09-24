@@ -81,6 +81,10 @@ _ORG_DEFAULTS = {
     # as jira_email/target_status/etc. Empty here means every channel must
     # set its own via /point-config (see app.py's handle_point).
     "jira_base_url": os.environ.get("JIRA_BASE_URL", "").rstrip("/"),
+    # Voter avatars on the card need the users:read Slack scope, so they're
+    # off unless turned on org-wide here or per channel via /point-config.
+    "show_avatars": os.environ.get("SHOW_VOTER_AVATARS", "").lower()
+    in ("1", "true", "yes", "on"),
 }
 
 # In-memory cache
@@ -137,6 +141,9 @@ def get_channel_config(channel_id: str) -> dict:
         "jira_api_token": (
             _decrypt_token(saved_token) if saved_token
             else _ORG_DEFAULTS["jira_api_token"]
+        ),
+        "show_avatars": saved.get(
+            "show_avatars", _ORG_DEFAULTS["show_avatars"]
         ),
         # Whether THIS channel has its own token configured, distinct from
         # inheriting the org-wide one -- lets the UI show accurate status

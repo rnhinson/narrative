@@ -10,6 +10,10 @@ POINT_VALUES = ["1", "2", "3", "5", "8", "13", "21", "?", "☕"]
 
 DESCRIPTION_INLINE_LIMIT = 500
 
+# Voter avatars on the card; a context block holds at most 10 elements,
+# and one is kept for the vote count.
+MAX_AVATARS = 9
+
 
 def build_voting_message(session, stats) -> list[dict]:
     """
@@ -28,140 +32,83 @@ def build_voting_message(session, stats) -> list[dict]:
     vote_count = stats.vote_count
     all_agree = stats.all_agree
     agreed_value = stats.agreed_value
-    distribution = stats.distribution
 
     blocks = []
 
-    # ── Header ────────────────────────────────────────────────────────────
-    blocks.append({
-        "type": "header",
-        "text": {"type": "plain_text", "text": "📖 Story Point Vote", "emoji": True},
-    })
+    # ── Ticket: key + summary, reporter/type fields, description toggle ───
     reporter = getattr(session, "issue_reporter", "") or ""
+    issue_type = getattr(session, "issue_type", "") or ""
     description = getattr(session, "issue_description", "") or ""
     expanded = getattr(session, "description_expanded", False)
 
-    # Ticket info: hyperlinked key, summary, reporter.
-    reporter_line = f"\n*Reporter:* {reporter}" if reporter else ""
-    blocks.append({
+    ticket = {
         "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": (
-                f"*Ticket:* <{issue_url}|{issue_key}>\n"
-                f"*Summary:* {issue_summary}{reporter_line}"
-            ),
-        },
-    })
+        "text": {"type": "mrkdwn", "text": f"*<{issue_url}|{issue_key}>*  {issue_summary}"},
+    }
+    fields = []
+    if reporter:
+        fields.append({"type": "mrkdwn", "text": f"*Reporter*\n{reporter}"})
+    if issue_type:
+        fields.append({"type": "mrkdwn", "text": f"*Type*\n{_issue_type_label(issue_type)}"})
+    if fields:
+        ticket["fields"] = fields
+    # Short descriptions toggle inline; long ones are posted in the thread.
+    short_description = description and len(description) <= DESCRIPTION_INLINE_LIMIT
+    if short_description:
+        ticket["accessory"] = {
+            "type": "button",
+            "text": {
+                "type": "plain_text",
+                "text": "Hide description" if expanded else "Description",
+                "emoji": True,
+            },
+            "action_id": "toggle_description",
+            "value": session.session_id,
+        }
+    blocks.append(ticket)
 
-    # Description toggle for short tickets; static note for long ones.
-    if description:
-        if len(description) <= DESCRIPTION_INLINE_LIMIT:
-            blocks.append({
-                "type": "actions",
-                "elements": [{
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": (
-                            "Hide Description" if expanded
-                            else "Show Description"
-                        ),
-                        "emoji": True,
-                    },
-                    "action_id": "toggle_description",
-                    "value": session.session_id,
-                }],
-            })
-            if expanded:
-                blocks.append({
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*Description:*\n{description}"},
-                })
-        else:
-            blocks.append({
-                "type": "context",
-                "elements": [{
-                    "type": "mrkdwn",
-                    "text": "📋 _Description is long — full text posted in thread._",
-                }],
-            })
-
-    blocks.append({"type": "divider"})
-
-    # ── Vote buttons (hidden after reveal or cancel) ──────────────────────
-    if not revealed and not cancelled:
-        chunks = [POINT_VALUES[i:i+5] for i in range(0, len(POINT_VALUES), 5)]
-        for chunk in chunks:
-            blocks.append({
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": pts, "emoji": True},
-                        "value": pts,
-                        "action_id": f"vote_{pts}",
-                        **({"style": "primary"} if pts not in ("?", "☕") else {}),
-                    }
-                    for pts in chunk
-                ],
-            })
-
-    # ── Voter list ────────────────────────────────────────────────────────
-    if vote_count == 0:
-        voter_text = "_No votes yet. Be the first!_"
-    elif not revealed:
-        # Single comma-separated line of who has voted (values hidden)
-        names = ", ".join(f"<@{uid}>" for uid in votes)
-        voter_text = f"✅  {names}"
-    else:
-        # Group voters by their point value, one line per value
-        groups: dict[str, list[str]] = {}
-        for uid, v in votes.items():
-            groups.setdefault(v["value"], []).append(f"<@{uid}>")
-        voter_text = "\n".join(
-            f"*{pts}* — {', '.join(uids)}"
-            for pts, uids in sorted(groups.items(), key=lambda kv: _sort_key(kv[0]))
-        )
-
-    blocks.append({
-        "type": "section",
-        "text": {"type": "mrkdwn", "text": f"*Votes ({vote_count}):*\n{voter_text}"},
-    })
-
-    # ── Results (after reveal) ────────────────────────────────────────────
-    if revealed:
-        sorted_dist = sorted(distribution.items(), key=lambda kv: _sort_key(kv[0]))
-        dist_text = "  |  ".join(
-            f"*{pts}* pts → {cnt} vote{'s' if cnt > 1 else ''}"
-            for pts, cnt in sorted_dist
-        )
-        if all_agree:
-            consensus_text = f"\n\n✅ *Consensus reached: {agreed_value} points!*"
-        else:
-            consensus_text = (
-                "\n\n⚠️ *No consensus yet.* Discuss and re-vote or pick a value."
-            )
-
+    if short_description and expanded:
         blocks.append({
             "type": "section",
-            "text": {
+            "text": {"type": "mrkdwn", "text": description},
+        })
+    elif description and not short_description:
+        blocks.append({
+            "type": "context",
+            "elements": [{
                 "type": "mrkdwn",
-                "text": f"*Results:*\n{dist_text}{consensus_text}",
-            },
+                "text": "📋 _Description is long — full text posted in thread._",
+            }],
         })
 
-    blocks.append({"type": "divider"})
-
-    # ── Action buttons ────────────────────────────────────────────────────
+    # ── Voting: point buttons, who has voted, reveal/cancel ───────────────
     if not revealed and not cancelled:
+        # One neutral row; Slack wraps it to the client's width.
         blocks.append({
             "type": "actions",
             "elements": [
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "👁️ Reveal Votes", "emoji": True},
-                    "style": "danger",
+                    "text": {"type": "plain_text", "text": pts, "emoji": True},
+                    "value": pts,
+                    "action_id": f"vote_{pts}",
+                }
+                for pts in POINT_VALUES
+            ],
+        })
+
+        blocks.append({
+            "type": "context",
+            "elements": _voter_context(votes, vote_count),
+        })
+
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Reveal votes", "emoji": True},
+                    "style": "primary",
                     "action_id": "reveal_votes",
                     "value": session.session_id,
                     "confirm": {
@@ -179,7 +126,7 @@ def build_voting_message(session, stats) -> list[dict]:
                 },
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "✖️ Cancel Pointing", "emoji": True},
+                    "text": {"type": "plain_text", "text": "Cancel", "emoji": True},
                     "action_id": "cancel_pointing",
                     "value": session.session_id,
                     "confirm": {
@@ -196,6 +143,25 @@ def build_voting_message(session, stats) -> list[dict]:
                     },
                 },
             ],
+        })
+
+    # ── Results (after reveal): one bar per value with its voters ─────────
+    if revealed:
+        blocks.append({"type": "divider"})
+        groups: dict[str, list[str]] = {}
+        for uid, v in votes.items():
+            groups.setdefault(v["value"], []).append(f"<@{uid}>")
+        if groups:
+            results_text = "\n".join(
+                f"`{pts:>2}`  {'🟩' * len(uids)}{'⬜' * (vote_count - len(uids))}  "
+                f"{', '.join(uids)}"
+                for pts, uids in sorted(groups.items(), key=lambda kv: _sort_key(kv[0]))
+            )
+        else:
+            results_text = "_No votes were cast._"
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": results_text},
         })
 
     # ── Cancelled banner ──────────────────────────────────────────────────
@@ -222,8 +188,21 @@ def build_voting_message(session, stats) -> list[dict]:
         })
 
     if revealed and not updated:
+        revote_button = {
+            "type": "button",
+            "text": {"type": "plain_text", "text": "Re-vote", "emoji": True},
+            "action_id": "revote",
+            "value": session.session_id,
+        }
         if all_agree:
             # Consensus path — pre-filled button
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"✅ *Consensus: {agreed_value} points*",
+                },
+            })
             blocks.append({
                 "type": "actions",
                 "elements": [
@@ -231,7 +210,7 @@ def build_voting_message(session, stats) -> list[dict]:
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": f"✅ Update Jira: {agreed_value} pts",
+                            "text": f"Update Jira: {agreed_value} pts",
                             "emoji": True,
                         },
                         "style": "primary",
@@ -255,49 +234,53 @@ def build_voting_message(session, stats) -> list[dict]:
                             "deny": {"type": "plain_text", "text": "Cancel"},
                         },
                     },
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "🔄 Re-vote",
-                            "emoji": True,
-                        },
-                        "action_id": "revote",
-                        "value": session.session_id,
-                    },
+                    revote_button,
                 ],
             })
         else:
-            # No consensus — dropdown picker + update button
+            # No consensus — summary + dropdown picker + update button
+            summary = "⚠️ *No consensus*"
+            numeric = sorted(
+                float(v["value"]) for v in votes.values()
+                if v["value"].isdigit()
+            )
+            if numeric:
+                summary += f"  ·  median *{_fmt_pts(_median(numeric))}*"
+                if numeric[0] != numeric[-1]:
+                    summary += (
+                        f"  ·  range {_fmt_pts(numeric[0])}–{_fmt_pts(numeric[-1])}"
+                    )
+            select = {
+                "type": "static_select",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Final points…",
+                    "emoji": True,
+                },
+                "action_id": "select_override_points",
+                "options": [
+                    {
+                        "text": {
+                            "type": "plain_text",
+                            "text": f"{v} pts",
+                            "emoji": True,
+                        },
+                        "value": f"{session.session_id}::{v}",
+                    }
+                    for v in POINT_VALUES
+                ],
+            }
+            # Keep the chosen value visible across card re-renders.
+            override = getattr(session, "override_points", None)
+            if override in POINT_VALUES:
+                select["initial_option"] = select["options"][POINT_VALUES.index(override)]
             blocks.append({
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": (
-                        "⚠️ *No consensus.* Choose the final point "
-                        "value to commit:"
-                    ),
+                    "text": f"{summary}\nPick the final value:",
                 },
-                "accessory": {
-                    "type": "static_select",
-                    "placeholder": {
-                        "type": "plain_text",
-                        "text": "Pick points…",
-                        "emoji": True,
-                    },
-                    "action_id": "select_override_points",
-                    "options": [
-                        {
-                            "text": {
-                                "type": "plain_text",
-                                "text": f"{v} pts",
-                                "emoji": True,
-                            },
-                            "value": f"{session.session_id}::{v}",
-                        }
-                        for v in POINT_VALUES
-                    ],
-                },
+                "accessory": select,
             })
             blocks.append({
                 "type": "actions",
@@ -306,7 +289,7 @@ def build_voting_message(session, stats) -> list[dict]:
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": "✅ Update Jira",
+                            "text": "Update Jira",
                             "emoji": True,
                         },
                         "style": "primary",
@@ -330,16 +313,7 @@ def build_voting_message(session, stats) -> list[dict]:
                             "deny": {"type": "plain_text", "text": "Cancel"},
                         },
                     },
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "🔄 Re-vote",
-                            "emoji": True,
-                        },
-                        "action_id": "revote",
-                        "value": session.session_id,
-                    },
+                    revote_button,
                 ],
             })
 
@@ -402,210 +376,112 @@ def build_voting_message(session, stats) -> list[dict]:
 # ── /point-config modal builders ─────────────────────────────────────────────
 
 def build_config_modal(channel_id: str, config: dict, org_defaults: dict) -> dict:
-    labels_value = ", ".join(config["labels_to_remove"])
-    org_labels_value = ", ".join(org_defaults["labels_to_remove"])
-
     if config["is_customized"]:
         context_text = (
-            "⚙️ This channel has custom settings. "
-            "Org defaults shown as placeholder text."
+            "This channel has its own settings. Empty fields use the org "
+            "defaults, shown as placeholder text."
         )
     else:
         context_text = (
-            "⚙️ Using org-wide defaults. "
-            "Fill in any field to override for this channel."
+            "This channel uses the org defaults. Fill in a field to "
+            "override it here."
         )
 
-    projects_value = ", ".join(config["allowed_projects"])
-    org_projects_value = ", ".join(org_defaults["allowed_projects"])
+    token_status = (
+        "🔒 A token is saved for this channel."
+        if config.get("has_channel_token")
+        else "No token saved for this channel yet."
+    )
+
+    avatars_option = {
+        "text": {"type": "plain_text", "text": "Show voter avatars"},
+        "description": {
+            "type": "plain_text",
+            "text": (
+                "Needs the users:read Slack scope. When off, voters show "
+                "as @mentions."
+            ),
+        },
+        "value": "on",
+    }
+    avatars_element = {
+        "type": "checkboxes",
+        "action_id": "value",
+        "options": [avatars_option],
+    }
+    if config["show_avatars"]:
+        avatars_element["initial_options"] = [avatars_option]
 
     modal_blocks = [
-        {"type": "context", "elements": [{"type": "mrkdwn", "text": context_text}]},
-        {"type": "divider"},
+        {"type": "context", "elements": [
+            {"type": "mrkdwn", "text": context_text},
+            {"type": "mrkdwn", "text": (
+                "`/point` needs a Jira site, email, API token and at least "
+                "one project, set here or in the org defaults."
+            )},
+        ]},
+
+        # ── Jira connection ──────────────────────────────────────────────
+        {"type": "header", "text": {"type": "plain_text", "text": "Jira connection"}},
+        _text_input(
+            "jira_base_url", "Jira site URL",
+            config["jira_base_url"],
+            org_defaults["jira_base_url"] or "https://yourcompany.atlassian.net",
+        ),
+        _text_input(
+            "jira_email", "Jira email",
+            config["jira_email"],
+            org_defaults["jira_email"] or "you@company.com",
+            hint="The Jira account this channel acts as.",
+        ),
+        # Deliberately never pre-filled: the token is a secret.
+        _text_input(
+            "jira_api_token", "Jira API token",
+            "",
+            "Paste a new token to replace it",
+            hint=(
+                "Create one at id.atlassian.com under Security → API tokens. "
+                f"Leave blank to keep the current token. {token_status}"
+            ),
+        ),
+
+        # ── Pointing ─────────────────────────────────────────────────────
+        {"type": "header", "text": {"type": "plain_text", "text": "Pointing"}},
+        _text_input(
+            "allowed_projects", "Allowed projects",
+            ", ".join(config["allowed_projects"]),
+            ", ".join(org_defaults["allowed_projects"]) or "PLAT, INFRA",
+            hint="Project keys this channel can point, separated by commas.",
+        ),
+        _text_input(
+            "story_points_field", "Story points field ID",
+            config["story_points_field"],
+            org_defaults["story_points_field"],
+            hint="Usually customfield_10016 or customfield_10028.",
+            optional=False,
+        ),
+        _text_input(
+            "target_status", "Move ticket to",
+            config["target_status"],
+            org_defaults["target_status"],
+            hint="The Jira transition to run after pointing. Must match its name exactly.",
+            optional=False,
+        ),
+        _text_input(
+            "labels_to_remove", "Labels to remove",
+            ", ".join(config["labels_to_remove"]),
+            ", ".join(org_defaults["labels_to_remove"]) or "needs-pointing, unpointed",
+            hint="Removed from the ticket after pointing, separated by commas.",
+        ),
+
+        # ── Voting card ──────────────────────────────────────────────────
+        {"type": "header", "text": {"type": "plain_text", "text": "Voting card"}},
         {
             "type": "input",
-            "block_id": "allowed_projects",
-            "label": {
-                "type": "plain_text",
-                "text": "Allowed Jira projects",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Comma-separated project short codes this channel may point "
-                    "(e.g. PLAT, INFRA). Required before /point will work in "
-                    "this channel."
-                ),
-            },
+            "block_id": "show_avatars",
+            "label": {"type": "plain_text", "text": "Voters"},
             "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": projects_value,
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_projects_value or "e.g. PLAT, INFRA",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "jira_base_url",
-            "label": {
-                "type": "plain_text",
-                "text": "Jira site URL",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Your Jira Cloud site, e.g. https://yourcompany.atlassian.net. "
-                    "Required before /point will work in this channel."
-                ),
-            },
-            "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": config["jira_base_url"],
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_defaults["jira_base_url"] or "e.g. https://yourcompany.atlassian.net",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "jira_email",
-            "label": {
-                "type": "plain_text",
-                "text": "Jira email",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": "Email for the Jira account this channel authenticates as.",
-            },
-            "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": config["jira_email"],
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_defaults["jira_email"] or "e.g. you@company.com",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "jira_api_token",
-            "label": {
-                "type": "plain_text",
-                "text": "Jira API token",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Generate at id.atlassian.com/manage-profile/security/api-tokens. "
-                    "Required before /point will work in this channel. Stored "
-                    "encrypted and never shown again -- leave blank to keep the "
-                    "current one; type a new value to replace it."
-                    + (
-                        "  🔒 A token is currently configured for this channel."
-                        if config.get("has_channel_token")
-                        else "  No channel-specific token is set yet."
-                    )
-                ),
-            },
-            "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                # Deliberately never pre-filled -- see hint above.
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": "Paste a new token to set/replace it",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "target_status",
-            "label": {
-                "type": "plain_text",
-                "text": "Jira target status",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Workflow transition name to move the ticket into after "
-                    "pointing (must match exactly)."
-                ),
-            },
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": config["target_status"],
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_defaults["target_status"],
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "labels_to_remove",
-            "label": {
-                "type": "plain_text",
-                "text": "Labels to remove",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Comma-separated list of Jira labels to strip from the "
-                    "ticket when updating."
-                ),
-            },
-            "optional": True,
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": labels_value,
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_labels_value or "e.g. needs-pointing, unpointed",
-                },
-            },
-        },
-        {
-            "type": "input",
-            "block_id": "story_points_field",
-            "label": {
-                "type": "plain_text",
-                "text": "Story points field ID",
-                "emoji": True,
-            },
-            "hint": {
-                "type": "plain_text",
-                "text": (
-                    "Jira custom field ID. Find via GET /rest/api/3/field. "
-                    "Common: customfield_10016 or customfield_10028."
-                ),
-            },
-            "element": {
-                "type": "plain_text_input",
-                "action_id": "value",
-                "initial_value": config["story_points_field"],
-                "placeholder": {
-                    "type": "plain_text",
-                    "text": org_defaults["story_points_field"],
-                },
-            },
+            "element": avatars_element,
         },
     ]
 
@@ -665,6 +541,29 @@ def build_config_modal(channel_id: str, config: dict, org_defaults: dict) -> dic
     }
 
 
+def _text_input(
+    block_id: str, label: str, value: str, placeholder: str,
+    hint: str | None = None, optional: bool = True,
+) -> dict:
+    element = {
+        "type": "plain_text_input",
+        "action_id": "value",
+        "placeholder": {"type": "plain_text", "text": placeholder},
+    }
+    if value:
+        element["initial_value"] = value
+    block = {
+        "type": "input",
+        "block_id": block_id,
+        "label": {"type": "plain_text", "text": label},
+        "optional": optional,
+        "element": element,
+    }
+    if hint:
+        block["hint"] = {"type": "plain_text", "text": hint}
+    return block
+
+
 def build_config_saved_message(config: dict) -> list[dict]:
     if config["labels_to_remove"]:
         labels_text = ", ".join(f"`{lb}`" for lb in config["labels_to_remove"])
@@ -690,7 +589,8 @@ def build_config_saved_message(config: dict) -> list[dict]:
                     f"*Jira API token:* {token_text}\n"
                     f"*Target status:* `{config['target_status']}`\n"
                     f"*Labels to remove:* {labels_text}\n"
-                    f"*Story points field:* `{config['story_points_field']}`"
+                    f"*Story points field:* `{config['story_points_field']}`\n"
+                    f"*Voter avatars:* {'on' if config['show_avatars'] else 'off'}"
                 ),
             },
         },
@@ -721,6 +621,66 @@ def build_config_reset_message() -> list[dict]:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _voter_context(votes: dict, vote_count: int) -> list[dict]:
+    """
+    Context elements for who has voted: an avatar per voter, then the count.
+    A context block allows 10 elements, so past MAX_AVATARS the rest show
+    as "+N". Voters without an avatar URL are listed as @mentions.
+    """
+    if vote_count == 0:
+        return [{"type": "mrkdwn", "text": "_No votes yet_"}]
+
+    with_avatar = [
+        (uid, v) for uid, v in votes.items() if v.get("avatar_url")
+    ]
+    without_avatar = [uid for uid, v in votes.items() if not v.get("avatar_url")]
+
+    elements = [
+        {
+            "type": "image",
+            "image_url": v["avatar_url"],
+            "alt_text": v.get("user_name") or "voter",
+        }
+        for _, v in with_avatar[:MAX_AVATARS]
+    ]
+    text = f"*{vote_count} voted*"
+    hidden = len(with_avatar) - MAX_AVATARS
+    if hidden > 0:
+        text = f"+{hidden}  ·  " + text
+    if without_avatar:
+        text += "  ·  " + ", ".join(f"<@{uid}>" for uid in without_avatar)
+    elements.append({"type": "mrkdwn", "text": text})
+    return elements
+
+
+# Jira's built-in issue types; anything else shows as plain text.
+ISSUE_TYPE_EMOJI = {
+    "story": "📗",
+    "bug": "🐞",
+    "task": "☑️",
+    "sub-task": "☑️",
+    "subtask": "☑️",
+    "epic": "⚡",
+    "spike": "🔍",
+}
+
+
+def _issue_type_label(issue_type: str) -> str:
+    emoji = ISSUE_TYPE_EMOJI.get(issue_type.lower())
+    return f"{emoji} {issue_type}" if emoji else issue_type
+
+
+def _median(values: list[float]) -> float:
+    mid = len(values) // 2
+    if len(values) % 2:
+        return values[mid]
+    return (values[mid - 1] + values[mid]) / 2
+
+
+def _fmt_pts(value: float) -> str:
+    return f"{value:g}"
+
 
 def _sort_key(pts: str) -> int:
     try:
