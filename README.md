@@ -10,10 +10,10 @@ A Slack bot for running Agile story point voting sessions with Jira integration.
 ## Features
 
 - **`/point PROJ-123`** — starts a vote in the channel with a live link to the Jira ticket
-- **Ticket context** — shows summary and reporter, with a **Show Full Description** toggle that expands the ticket description inline (Jira's rich-text description is flattened to readable text)
+- **Ticket context** — shows summary, reporter and issue type, with a **Description** toggle that expands the ticket description inline (Jira's rich-text description is flattened to readable text)
 - **Fibonacci scale** — buttons for 1, 2, 3, 5, 8, 13, 21, ?, ☕
 - **Hidden votes** — voters are listed but values stay hidden until reveal
-- **Reveal** — shows all votes with a distribution; highlights consensus
+- **Reveal** — shows all votes as a per-value breakdown with median and range; highlights consensus
 - **Override** — if there's no consensus, a dropdown lets the team pick a final value
 - **Re-vote** — resets the round without losing the session
 - **Update Jira** — one click when ready: sets story points, removes labels, transitions the ticket

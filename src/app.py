@@ -131,6 +131,7 @@ def handle_point(ack, command, respond, client):
         initiated_by=command["user_id"],
         issue_description=issue.get("description", ""),
         issue_reporter=issue.get("reporter", ""),
+        issue_type=issue.get("issue_type", ""),
     )
     placeholder_stats = store.VoteStats(
         vote_count=0, all_agree=False, agreed_value=None, distribution={}
@@ -160,6 +161,7 @@ def handle_point(ack, command, respond, client):
         initiated_by=command["user_id"],
         issue_description=issue.get("description", ""),
         issue_reporter=issue.get("reporter", ""),
+        issue_type=issue.get("issue_type", ""),
     )
     stats = store.get_vote_stats(session)
 

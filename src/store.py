@@ -15,6 +15,7 @@ Session shape:
     override_points: str | None   — selected value when no consensus
     issue_description: str        — flattened Jira description text
     issue_reporter: str           — Jira reporter display name
+    issue_type: str               — Jira issue type name (Story, Bug, …)
     description_expanded: bool    — whether the card is showing the description
     original_state: dict | None   — pre-update snapshot for revert
     reverted: bool                — whether the Jira update was reverted
@@ -39,6 +40,7 @@ class Session:
     override_points: str | None = None
     issue_description: str = ""
     issue_reporter: str = ""
+    issue_type: str = ""
     description_expanded: bool = False
     original_state: dict | None = None  # pre-update {status, labels, story_points}
     reverted: bool = False
@@ -66,6 +68,7 @@ def create_session(
     initiated_by: str,
     issue_description: str = "",
     issue_reporter: str = "",
+    issue_type: str = "",
 ) -> Session:
     session_id = f"{channel_id}:{message_ts}"
     session = Session(
@@ -78,6 +81,7 @@ def create_session(
         initiated_by=initiated_by,
         issue_description=issue_description,
         issue_reporter=issue_reporter,
+        issue_type=issue_type,
     )
     _sessions[session_id] = session
     return session

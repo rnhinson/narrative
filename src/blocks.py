@@ -28,140 +28,88 @@ def build_voting_message(session, stats) -> list[dict]:
     vote_count = stats.vote_count
     all_agree = stats.all_agree
     agreed_value = stats.agreed_value
-    distribution = stats.distribution
 
     blocks = []
 
-    # ── Header ────────────────────────────────────────────────────────────
-    blocks.append({
-        "type": "header",
-        "text": {"type": "plain_text", "text": "📖 Story Point Vote", "emoji": True},
-    })
+    # ── Ticket: key + summary, reporter/type fields, description toggle ───
     reporter = getattr(session, "issue_reporter", "") or ""
+    issue_type = getattr(session, "issue_type", "") or ""
     description = getattr(session, "issue_description", "") or ""
     expanded = getattr(session, "description_expanded", False)
 
-    # Ticket info: hyperlinked key, summary, reporter.
-    reporter_line = f"\n*Reporter:* {reporter}" if reporter else ""
-    blocks.append({
+    ticket = {
         "type": "section",
-        "text": {
-            "type": "mrkdwn",
-            "text": (
-                f"*Ticket:* <{issue_url}|{issue_key}>\n"
-                f"*Summary:* {issue_summary}{reporter_line}"
-            ),
-        },
-    })
+        "text": {"type": "mrkdwn", "text": f"*<{issue_url}|{issue_key}>*  {issue_summary}"},
+    }
+    fields = []
+    if reporter:
+        fields.append({"type": "mrkdwn", "text": f"*Reporter*\n{reporter}"})
+    if issue_type:
+        fields.append({"type": "mrkdwn", "text": f"*Type*\n{_issue_type_label(issue_type)}"})
+    if fields:
+        ticket["fields"] = fields
+    # Short descriptions toggle inline; long ones are posted in the thread.
+    short_description = description and len(description) <= DESCRIPTION_INLINE_LIMIT
+    if short_description:
+        ticket["accessory"] = {
+            "type": "button",
+            "text": {
+                "type": "plain_text",
+                "text": "Hide description" if expanded else "Description",
+                "emoji": True,
+            },
+            "action_id": "toggle_description",
+            "value": session.session_id,
+        }
+    blocks.append(ticket)
 
-    # Description toggle for short tickets; static note for long ones.
-    if description:
-        if len(description) <= DESCRIPTION_INLINE_LIMIT:
-            blocks.append({
-                "type": "actions",
-                "elements": [{
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": (
-                            "Hide Description" if expanded
-                            else "Show Description"
-                        ),
-                        "emoji": True,
-                    },
-                    "action_id": "toggle_description",
-                    "value": session.session_id,
-                }],
-            })
-            if expanded:
-                blocks.append({
-                    "type": "section",
-                    "text": {"type": "mrkdwn", "text": f"*Description:*\n{description}"},
-                })
-        else:
-            blocks.append({
-                "type": "context",
-                "elements": [{
-                    "type": "mrkdwn",
-                    "text": "📋 _Description is long — full text posted in thread._",
-                }],
-            })
-
-    blocks.append({"type": "divider"})
-
-    # ── Vote buttons (hidden after reveal or cancel) ──────────────────────
-    if not revealed and not cancelled:
-        chunks = [POINT_VALUES[i:i+5] for i in range(0, len(POINT_VALUES), 5)]
-        for chunk in chunks:
-            blocks.append({
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": pts, "emoji": True},
-                        "value": pts,
-                        "action_id": f"vote_{pts}",
-                        **({"style": "primary"} if pts not in ("?", "☕") else {}),
-                    }
-                    for pts in chunk
-                ],
-            })
-
-    # ── Voter list ────────────────────────────────────────────────────────
-    if vote_count == 0:
-        voter_text = "_No votes yet. Be the first!_"
-    elif not revealed:
-        # Single comma-separated line of who has voted (values hidden)
-        names = ", ".join(f"<@{uid}>" for uid in votes)
-        voter_text = f"✅  {names}"
-    else:
-        # Group voters by their point value, one line per value
-        groups: dict[str, list[str]] = {}
-        for uid, v in votes.items():
-            groups.setdefault(v["value"], []).append(f"<@{uid}>")
-        voter_text = "\n".join(
-            f"*{pts}* — {', '.join(uids)}"
-            for pts, uids in sorted(groups.items(), key=lambda kv: _sort_key(kv[0]))
-        )
-
-    blocks.append({
-        "type": "section",
-        "text": {"type": "mrkdwn", "text": f"*Votes ({vote_count}):*\n{voter_text}"},
-    })
-
-    # ── Results (after reveal) ────────────────────────────────────────────
-    if revealed:
-        sorted_dist = sorted(distribution.items(), key=lambda kv: _sort_key(kv[0]))
-        dist_text = "  |  ".join(
-            f"*{pts}* pts → {cnt} vote{'s' if cnt > 1 else ''}"
-            for pts, cnt in sorted_dist
-        )
-        if all_agree:
-            consensus_text = f"\n\n✅ *Consensus reached: {agreed_value} points!*"
-        else:
-            consensus_text = (
-                "\n\n⚠️ *No consensus yet.* Discuss and re-vote or pick a value."
-            )
-
+    if short_description and expanded:
         blocks.append({
             "type": "section",
-            "text": {
+            "text": {"type": "mrkdwn", "text": description},
+        })
+    elif description and not short_description:
+        blocks.append({
+            "type": "context",
+            "elements": [{
                 "type": "mrkdwn",
-                "text": f"*Results:*\n{dist_text}{consensus_text}",
-            },
+                "text": "📋 _Description is long — full text posted in thread._",
+            }],
         })
 
-    blocks.append({"type": "divider"})
-
-    # ── Action buttons ────────────────────────────────────────────────────
+    # ── Voting: point buttons, who has voted, reveal/cancel ───────────────
     if not revealed and not cancelled:
+        # One neutral row; Slack wraps it to the client's width.
         blocks.append({
             "type": "actions",
             "elements": [
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "👁️ Reveal Votes", "emoji": True},
-                    "style": "danger",
+                    "text": {"type": "plain_text", "text": pts, "emoji": True},
+                    "value": pts,
+                    "action_id": f"vote_{pts}",
+                }
+                for pts in POINT_VALUES
+            ],
+        })
+
+        if vote_count == 0:
+            voter_text = "_No votes yet_"
+        else:
+            names = ", ".join(f"<@{uid}>" for uid in votes)
+            voter_text = f"*{vote_count} voted*  ·  {names}"
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": voter_text}],
+        })
+
+        blocks.append({
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "Reveal votes", "emoji": True},
+                    "style": "primary",
                     "action_id": "reveal_votes",
                     "value": session.session_id,
                     "confirm": {
@@ -179,7 +127,7 @@ def build_voting_message(session, stats) -> list[dict]:
                 },
                 {
                     "type": "button",
-                    "text": {"type": "plain_text", "text": "✖️ Cancel Pointing", "emoji": True},
+                    "text": {"type": "plain_text", "text": "Cancel", "emoji": True},
                     "action_id": "cancel_pointing",
                     "value": session.session_id,
                     "confirm": {
@@ -196,6 +144,25 @@ def build_voting_message(session, stats) -> list[dict]:
                     },
                 },
             ],
+        })
+
+    # ── Results (after reveal): one bar per value with its voters ─────────
+    if revealed:
+        blocks.append({"type": "divider"})
+        groups: dict[str, list[str]] = {}
+        for uid, v in votes.items():
+            groups.setdefault(v["value"], []).append(f"<@{uid}>")
+        if groups:
+            results_text = "\n".join(
+                f"`{pts:>2}`  {'🟩' * len(uids)}{'⬜' * (vote_count - len(uids))}  "
+                f"{', '.join(uids)}"
+                for pts, uids in sorted(groups.items(), key=lambda kv: _sort_key(kv[0]))
+            )
+        else:
+            results_text = "_No votes were cast._"
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": results_text},
         })
 
     # ── Cancelled banner ──────────────────────────────────────────────────
@@ -222,8 +189,21 @@ def build_voting_message(session, stats) -> list[dict]:
         })
 
     if revealed and not updated:
+        revote_button = {
+            "type": "button",
+            "text": {"type": "plain_text", "text": "Re-vote", "emoji": True},
+            "action_id": "revote",
+            "value": session.session_id,
+        }
         if all_agree:
             # Consensus path — pre-filled button
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"✅ *Consensus: {agreed_value} points*",
+                },
+            })
             blocks.append({
                 "type": "actions",
                 "elements": [
@@ -231,7 +211,7 @@ def build_voting_message(session, stats) -> list[dict]:
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": f"✅ Update Jira: {agreed_value} pts",
+                            "text": f"Update Jira: {agreed_value} pts",
                             "emoji": True,
                         },
                         "style": "primary",
@@ -255,49 +235,53 @@ def build_voting_message(session, stats) -> list[dict]:
                             "deny": {"type": "plain_text", "text": "Cancel"},
                         },
                     },
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "🔄 Re-vote",
-                            "emoji": True,
-                        },
-                        "action_id": "revote",
-                        "value": session.session_id,
-                    },
+                    revote_button,
                 ],
             })
         else:
-            # No consensus — dropdown picker + update button
+            # No consensus — summary + dropdown picker + update button
+            summary = "⚠️ *No consensus*"
+            numeric = sorted(
+                float(v["value"]) for v in votes.values()
+                if v["value"].isdigit()
+            )
+            if numeric:
+                summary += f"  ·  median *{_fmt_pts(_median(numeric))}*"
+                if numeric[0] != numeric[-1]:
+                    summary += (
+                        f"  ·  range {_fmt_pts(numeric[0])}–{_fmt_pts(numeric[-1])}"
+                    )
+            select = {
+                "type": "static_select",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": "Final points…",
+                    "emoji": True,
+                },
+                "action_id": "select_override_points",
+                "options": [
+                    {
+                        "text": {
+                            "type": "plain_text",
+                            "text": f"{v} pts",
+                            "emoji": True,
+                        },
+                        "value": f"{session.session_id}::{v}",
+                    }
+                    for v in POINT_VALUES
+                ],
+            }
+            # Keep the chosen value visible across card re-renders.
+            override = getattr(session, "override_points", None)
+            if override in POINT_VALUES:
+                select["initial_option"] = select["options"][POINT_VALUES.index(override)]
             blocks.append({
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": (
-                        "⚠️ *No consensus.* Choose the final point "
-                        "value to commit:"
-                    ),
+                    "text": f"{summary}\nPick the final value:",
                 },
-                "accessory": {
-                    "type": "static_select",
-                    "placeholder": {
-                        "type": "plain_text",
-                        "text": "Pick points…",
-                        "emoji": True,
-                    },
-                    "action_id": "select_override_points",
-                    "options": [
-                        {
-                            "text": {
-                                "type": "plain_text",
-                                "text": f"{v} pts",
-                                "emoji": True,
-                            },
-                            "value": f"{session.session_id}::{v}",
-                        }
-                        for v in POINT_VALUES
-                    ],
-                },
+                "accessory": select,
             })
             blocks.append({
                 "type": "actions",
@@ -306,7 +290,7 @@ def build_voting_message(session, stats) -> list[dict]:
                         "type": "button",
                         "text": {
                             "type": "plain_text",
-                            "text": "✅ Update Jira",
+                            "text": "Update Jira",
                             "emoji": True,
                         },
                         "style": "primary",
@@ -330,16 +314,7 @@ def build_voting_message(session, stats) -> list[dict]:
                             "deny": {"type": "plain_text", "text": "Cancel"},
                         },
                     },
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "🔄 Re-vote",
-                            "emoji": True,
-                        },
-                        "action_id": "revote",
-                        "value": session.session_id,
-                    },
+                    revote_button,
                 ],
             })
 
@@ -721,6 +696,34 @@ def build_config_reset_message() -> list[dict]:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+# Jira's built-in issue types; anything else shows as plain text.
+ISSUE_TYPE_EMOJI = {
+    "story": "📗",
+    "bug": "🐞",
+    "task": "☑️",
+    "sub-task": "☑️",
+    "subtask": "☑️",
+    "epic": "⚡",
+    "spike": "🔍",
+}
+
+
+def _issue_type_label(issue_type: str) -> str:
+    emoji = ISSUE_TYPE_EMOJI.get(issue_type.lower())
+    return f"{emoji} {issue_type}" if emoji else issue_type
+
+
+def _median(values: list[float]) -> float:
+    mid = len(values) // 2
+    if len(values) % 2:
+        return values[mid]
+    return (values[mid - 1] + values[mid]) / 2
+
+
+def _fmt_pts(value: float) -> str:
+    return f"{value:g}"
+
 
 def _sort_key(pts: str) -> int:
     try:
