@@ -10,6 +10,10 @@ POINT_VALUES = ["1", "2", "3", "5", "8", "13", "21", "?", "☕"]
 
 DESCRIPTION_INLINE_LIMIT = 500
 
+# Voter avatars on the card; a context block holds at most 10 elements,
+# and one is kept for the vote count.
+MAX_AVATARS = 9
+
 
 def build_voting_message(session, stats) -> list[dict]:
     """
@@ -93,14 +97,9 @@ def build_voting_message(session, stats) -> list[dict]:
             ],
         })
 
-        if vote_count == 0:
-            voter_text = "_No votes yet_"
-        else:
-            names = ", ".join(f"<@{uid}>" for uid in votes)
-            voter_text = f"*{vote_count} voted*  ·  {names}"
         blocks.append({
             "type": "context",
-            "elements": [{"type": "mrkdwn", "text": voter_text}],
+            "elements": _voter_context(votes, vote_count),
         })
 
         blocks.append({
@@ -696,6 +695,38 @@ def build_config_reset_message() -> list[dict]:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _voter_context(votes: dict, vote_count: int) -> list[dict]:
+    """
+    Context elements for who has voted: an avatar per voter, then the count.
+    A context block allows 10 elements, so past MAX_AVATARS the rest show
+    as "+N". Voters without an avatar URL are listed as @mentions.
+    """
+    if vote_count == 0:
+        return [{"type": "mrkdwn", "text": "_No votes yet_"}]
+
+    with_avatar = [
+        (uid, v) for uid, v in votes.items() if v.get("avatar_url")
+    ]
+    without_avatar = [uid for uid, v in votes.items() if not v.get("avatar_url")]
+
+    elements = [
+        {
+            "type": "image",
+            "image_url": v["avatar_url"],
+            "alt_text": v.get("user_name") or "voter",
+        }
+        for _, v in with_avatar[:MAX_AVATARS]
+    ]
+    text = f"*{vote_count} voted*"
+    hidden = len(with_avatar) - MAX_AVATARS
+    if hidden > 0:
+        text = f"+{hidden}  ·  " + text
+    if without_avatar:
+        text += "  ·  " + ", ".join(f"<@{uid}>" for uid in without_avatar)
+    elements.append({"type": "mrkdwn", "text": text})
+    return elements
+
 
 # Jira's built-in issue types; anything else shows as plain text.
 ISSUE_TYPE_EMOJI = {

@@ -197,7 +197,9 @@ def handle_vote(ack, action, body, client):
     channel_id = body["channel"]["id"]
     message_ts = body["message"]["ts"]
     user_id = body["user"]["id"]
-    user_name = body["user"].get("username", user_id)
+    user_name, avatar_url = _lookup_user(
+        client, user_id, body["user"].get("username", user_id)
+    )
 
     session = store.get_session_by_message(channel_id, message_ts)
     if not session:
@@ -214,7 +216,9 @@ def handle_vote(ack, action, body, client):
         )
         return
 
-    store.add_vote(session.session_id, user_id, user_name, action["value"])
+    store.add_vote(
+        session.session_id, user_id, user_name, action["value"], avatar_url
+    )
     stats = store.get_vote_stats(session)
 
     client.chat_update(
@@ -610,6 +614,33 @@ def handle_reset_config(ack, action, body, client):
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
+# user_id -> (display name, avatar URL); profiles rarely change mid-session.
+_user_profiles: dict[str, tuple[str, str]] = {}
+
+
+def _lookup_user(client, user_id, fallback_name):
+    """
+    Return (display name, avatar URL) for the voter avatars on the card.
+    Needs the users:read scope; on failure falls back to (fallback_name, "")
+    and the card shows an @mention instead of an avatar.
+    """
+    if user_id in _user_profiles:
+        return _user_profiles[user_id]
+    try:
+        user = client.users_info(user=user_id)["user"]
+    except Exception as exc:
+        logger.warning("users.info failed for %s: %s", user_id, exc)
+        return fallback_name, ""
+    profile = user.get("profile") or {}
+    name = (
+        profile.get("display_name") or profile.get("real_name")
+        or user.get("name") or fallback_name
+    )
+    avatar_url = profile.get("image_48") or profile.get("image_72") or ""
+    _user_profiles[user_id] = (name, avatar_url)
+    return name, avatar_url
+
+
 def _post_ephemeral(client, channel_id, user_id, thread_ts, text):
     try:
         client.chat_postEphemeral(

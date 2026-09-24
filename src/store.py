@@ -8,7 +8,7 @@ Session shape:
     issue_key:      str
     issue_summary:  str
     issue_url:      str
-    votes:          dict[user_id, {"user_name": str, "value": str}]
+    votes:          dict[user_id, {"user_name": str, "value": str, "avatar_url": str}]
     revealed:       bool
     updated:        bool
     initiated_by:   str           — user_id who started the vote
@@ -96,12 +96,15 @@ def get_session_by_message(channel_id: str, message_ts: str) -> Session | None:
 
 
 def add_vote(
-    session_id: str, user_id: str, user_name: str, value: str
+    session_id: str, user_id: str, user_name: str, value: str,
+    avatar_url: str = "",
 ) -> Session | None:
     session = _sessions.get(session_id)
     if not session:
         return None
-    session.votes[user_id] = {"user_name": user_name, "value": value}
+    session.votes[user_id] = {
+        "user_name": user_name, "value": value, "avatar_url": avatar_url,
+    }
     return session
 
 

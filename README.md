@@ -37,7 +37,7 @@ pip install -r requirements.txt
 ### 2. Create a Slack App
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From Scratch**
-2. Add **Bot Token Scopes** under OAuth & Permissions: `chat:write`, `chat:write.public`, `commands`
+2. Add **Bot Token Scopes** under OAuth & Permissions: `chat:write`, `chat:write.public`, `commands`, `users:read` (for voter avatars on the card)
 3. Create two **Slash Commands** — `/point` and `/point-config` (no Request URL needed in Socket Mode)
 4. Enable **Interactivity** (no Request URL needed in Socket Mode)
 5. Enable **Socket Mode** and generate an App-Level Token with `connections:write` scope — copy it as `SLACK_APP_TOKEN`
